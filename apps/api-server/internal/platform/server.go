@@ -62,6 +62,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/admin/nginx/render-https", s.adminAuth(s.adminRenderHTTPSNginx))
 	s.mux.HandleFunc("/api/admin/nginx/test", s.adminAuth(s.adminTestNginx))
 	s.mux.HandleFunc("/api/admin/nginx/reload", s.adminAuth(s.adminReloadNginx))
+	s.mux.HandleFunc("/api/admin/certificates", s.adminAuth(s.adminCertificates))
 	s.mux.HandleFunc("/api/admin/certificates/request", s.adminAuth(s.adminRequestCertificate))
 }
 
@@ -341,6 +342,10 @@ func (s *Server) adminRenderHTTPSNginx(w http.ResponseWriter, r *http.Request) {
 	ok(w, res)
 }
 
+func (s *Server) adminCertificates(w http.ResponseWriter, r *http.Request) {
+	ok(w, s.store.Certificates())
+}
+
 func (s *Server) adminRequestCertificate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(405)
@@ -354,11 +359,27 @@ func (s *Server) adminRequestCertificate(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	res, err := s.automation.RequestCertificate(r.Context(), in.Domain, in.Email)
+	status := "issued"
+	errorMessage := ""
+	if res.DryRun {
+		status = "dry_run"
+	}
+	if err != nil {
+		status = "failed"
+		errorMessage = err.Error()
+	}
+	certPath, keyPath := s.automation.CertificatePaths(in.Domain)
+	issuedAt, expiresAt := s.automation.InspectCertificate(in.Domain)
+	record, saveErr := s.store.SaveCertificate(CertificateRecord{Domain: in.Domain, Status: status, IssuedAt: issuedAt, ExpiresAt: expiresAt, CertPath: certPath, KeyPath: keyPath, LastCommand: res.Command, LastOutput: res.Output, ErrorMessage: errorMessage})
+	if saveErr != nil {
+		fail(w, 500, "CERTIFICATE_SAVE_FAILED", saveErr.Error())
+		return
+	}
 	if err != nil {
 		fail(w, 500, "CERTIFICATE_REQUEST_FAILED", err.Error()+"\n"+res.Output)
 		return
 	}
-	ok(w, res)
+	ok(w, map[string]any{"result": res, "record": record})
 }
 
 func (s *Server) adminTestNginx(w http.ResponseWriter, r *http.Request) {

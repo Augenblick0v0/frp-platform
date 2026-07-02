@@ -130,6 +130,21 @@ CREATE TABLE IF NOT EXISTS port_allocations (
     UNIQUE(protocol, port)
 );
 
+CREATE TABLE IF NOT EXISTS certificates (
+    id BIGSERIAL PRIMARY KEY,
+    domain VARCHAR(255) NOT NULL UNIQUE,
+    status VARCHAR(32) NOT NULL DEFAULT 'none',
+    issued_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ,
+    cert_path TEXT,
+    key_path TEXT,
+    last_command TEXT,
+    last_output TEXT,
+    error_message TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS traffic_logs (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(id),

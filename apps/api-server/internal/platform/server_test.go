@@ -101,3 +101,19 @@ func TestAdminLoginProtectsAdminAPI(t *testing.T) {
 		t.Fatalf("expected admin dashboard with token to be 200, got %d body=%s", rr.Code, rr.Body.String())
 	}
 }
+
+func TestCertificateRequestPersistsDryRunRecord(t *testing.T) {
+	store := NewStore()
+	s := NewServerWithServices(store, LogMailer{}, &Automation{NginxConfDir: t.TempDir(), WebrootDir: "/tmp/acme", LetsEncryptDir: "/tmp/letsencrypt", FRPVhostURL: "http://frps:8080", CertbotBin: "certbot", DryRun: true})
+	login := post(t, s, "/api/admin/login", map[string]any{"email": "admin@example.com", "password": "admin123456"}, "")
+	token := login["access_token"].(string)
+	post(t, s, "/api/admin/certificates/request", map[string]any{"domain": "cert.example.com", "email": "admin@example.com"}, token)
+	rr := request(t, s, "GET", "/api/admin/certificates", nil, token)
+	if rr.Code != 200 {
+		t.Fatalf("cert list status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	certs := store.Certificates()
+	if len(certs) != 1 || certs[0].Domain != "cert.example.com" || certs[0].Status != "dry_run" {
+		t.Fatalf("unexpected certs %#v", certs)
+	}
+}

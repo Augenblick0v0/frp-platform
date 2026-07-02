@@ -3,6 +3,8 @@ package platform
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"net"
 	"os"
@@ -182,3 +184,27 @@ var httpsTemplate = template.Must(template.New("https").Parse(`server {
     }
 }
 `))
+
+func (a *Automation) CertificatePaths(domain string) (string, string) {
+	domain = sanitizeDomain(domain)
+	return filepath.Join(a.LetsEncryptDir, "live", domain, "fullchain.pem"), filepath.Join(a.LetsEncryptDir, "live", domain, "privkey.pem")
+}
+
+func (a *Automation) InspectCertificate(domain string) (*time.Time, *time.Time) {
+	certPath, _ := a.CertificatePaths(domain)
+	data, err := os.ReadFile(certPath)
+	if err != nil {
+		return nil, nil
+	}
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return nil, nil
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, nil
+	}
+	issued := cert.NotBefore
+	expires := cert.NotAfter
+	return &issued, &expires
+}

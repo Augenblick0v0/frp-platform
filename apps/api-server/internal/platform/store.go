@@ -35,13 +35,15 @@ type Store struct {
 	nextTunnelID  int64
 	settings      Settings
 	todayTraffic  int64
+	certificates  map[string]CertificateRecord
+	nextCertID    int64
 }
 
 func NewStore() *Store {
 	s := &Store{
 		users: map[int64]User{}, usersByEmail: map[string]int64{}, admins: map[int64]AdminUser{}, adminsByEmail: map[string]int64{}, sessions: map[string]int64{}, adminSessions: map[string]int64{}, emailCodes: map[string]string{},
-		plans: map[int64]Plan{}, redeemCodes: map[string]RedeemCode{}, subscriptions: map[int64]Subscription{}, tunnels: map[int64]Tunnel{}, domains: map[string]int64{},
-		usedTCP: map[int]bool{}, usedUDP: map[int]bool{}, nextUserID: 1, nextAdminID: 1, nextPlanID: 1, nextTunnelID: 1,
+		plans: map[int64]Plan{}, redeemCodes: map[string]RedeemCode{}, subscriptions: map[int64]Subscription{}, tunnels: map[int64]Tunnel{}, domains: map[string]int64{}, certificates: map[string]CertificateRecord{},
+		usedTCP: map[int]bool{}, usedUDP: map[int]bool{}, nextUserID: 1, nextAdminID: 1, nextPlanID: 1, nextTunnelID: 1, nextCertID: 1,
 		settings: Settings{PlatformDomain: "example.com", FRPEntryDomain: "frp.example.com", ServerAddr: "frp.example.com", FRPServerPort: 7000, TCPPortStart: 20000, TCPPortEnd: 29999, UDPPortStart: 30000, UDPPortEnd: 39999, PurchaseURL: "https://example.com/buy"},
 	}
 	plan := Plan{ID: s.nextPlanID, Name: "高级套餐", Description: "支持 TCP/UDP/HTTP/HTTPS、自定义域名和自动证书", DurationDays: 30, TrafficLimitBytes: 100 * 1024 * 1024 * 1024, BandwidthKbps: 10240, MaxTunnels: 20, MaxTCPTunnels: 10, MaxUDPTunnels: 10, MaxHTTPTunnels: 10, MaxHTTPSTunnels: 10, AllowTCP: true, AllowUDP: true, AllowHTTP: true, AllowHTTPS: true, AllowCustomDomain: true, MaxDomains: 10, AllowAutoCert: true, Status: "active"}
@@ -444,4 +446,38 @@ func trafficSummaryFromSub(userID int64, sub Subscription, today int64) TrafficS
 		left = 0
 	}
 	return TrafficSummary{UserID: userID, TrafficLimitBytes: sub.TrafficLimitBytes, TrafficUsedBytes: sub.TrafficUsedBytes, TrafficLeftBytes: left, TodayBytes: today}
+}
+
+func (s *Store) SaveCertificate(record CertificateRecord) (CertificateRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	domain := sanitizeDomain(record.Domain)
+	if domain == "" {
+		return CertificateRecord{}, fmt.Errorf("domain required")
+	}
+	now := time.Now()
+	existing := s.certificates[domain]
+	if existing.ID == 0 {
+		existing.ID = s.nextCertID
+		s.nextCertID++
+		existing.CreatedAt = now
+	}
+	record.ID = existing.ID
+	record.Domain = domain
+	if record.CreatedAt.IsZero() {
+		record.CreatedAt = existing.CreatedAt
+	}
+	record.UpdatedAt = now
+	s.certificates[domain] = record
+	return record, nil
+}
+
+func (s *Store) Certificates() []CertificateRecord {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []CertificateRecord{}
+	for _, cert := range s.certificates {
+		out = append(out, cert)
+	}
+	return out
 }

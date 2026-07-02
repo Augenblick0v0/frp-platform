@@ -543,3 +543,39 @@ func (s *SQLStore) TotalTrafficToday() int64 {
 	_ = s.db.QueryRow(`SELECT coalesce(sum(bytes_in+bytes_out),0) FROM traffic_logs WHERE recorded_at >= date_trunc('day', now())`).Scan(&today)
 	return today
 }
+
+func (s *SQLStore) SaveCertificate(record CertificateRecord) (CertificateRecord, error) {
+	domain := sanitizeDomain(record.Domain)
+	if domain == "" {
+		return CertificateRecord{}, fmt.Errorf("domain required")
+	}
+	record.Domain = domain
+	err := s.db.QueryRow(`INSERT INTO certificates (domain,status,issued_at,expires_at,cert_path,key_path,last_command,last_output,error_message)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+ON CONFLICT (domain) DO UPDATE SET status=excluded.status, issued_at=excluded.issued_at, expires_at=excluded.expires_at, cert_path=excluded.cert_path, key_path=excluded.key_path, last_command=excluded.last_command, last_output=excluded.last_output, error_message=excluded.error_message, updated_at=now()
+RETURNING id,domain,status,issued_at,expires_at,coalesce(cert_path,''),coalesce(key_path,''),coalesce(last_command,''),coalesce(last_output,''),coalesce(error_message,''),created_at,updated_at`, record.Domain, record.Status, record.IssuedAt, record.ExpiresAt, record.CertPath, record.KeyPath, record.LastCommand, record.LastOutput, record.ErrorMessage).Scan(&record.ID, &record.Domain, &record.Status, &record.IssuedAt, &record.ExpiresAt, &record.CertPath, &record.KeyPath, &record.LastCommand, &record.LastOutput, &record.ErrorMessage, &record.CreatedAt, &record.UpdatedAt)
+	return record, err
+}
+
+func (s *SQLStore) Certificates() []CertificateRecord {
+	rows, err := s.db.Query(`SELECT id,domain,status,issued_at,expires_at,coalesce(cert_path,''),coalesce(key_path,''),coalesce(last_command,''),coalesce(last_output,''),coalesce(error_message,''),created_at,updated_at FROM certificates ORDER BY updated_at DESC LIMIT 500`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := []CertificateRecord{}
+	for rows.Next() {
+		var cert CertificateRecord
+		var issued sql.NullTime
+		var expires sql.NullTime
+		_ = rows.Scan(&cert.ID, &cert.Domain, &cert.Status, &issued, &expires, &cert.CertPath, &cert.KeyPath, &cert.LastCommand, &cert.LastOutput, &cert.ErrorMessage, &cert.CreatedAt, &cert.UpdatedAt)
+		if issued.Valid {
+			cert.IssuedAt = &issued.Time
+		}
+		if expires.Valid {
+			cert.ExpiresAt = &expires.Time
+		}
+		out = append(out, cert)
+	}
+	return out
+}

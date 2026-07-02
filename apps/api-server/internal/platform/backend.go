@@ -22,4 +22,6 @@ type Backend interface {
 	ReportTraffic(userID int64, reports []TrafficReport) (TrafficSummary, error)
 	TrafficSummary(userID int64) (TrafficSummary, error)
 	TotalTrafficToday() int64
+	SaveCertificate(record CertificateRecord) (CertificateRecord, error)
+	Certificates() []CertificateRecord
 }

@@ -113,3 +113,18 @@ type AdminUser struct {
 	Status    string    `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+type CertificateRecord struct {
+	ID           int64      `json:"id"`
+	Domain       string     `json:"domain"`
+	Status       string     `json:"status"`
+	IssuedAt     *time.Time `json:"issued_at,omitempty"`
+	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
+	CertPath     string     `json:"cert_path,omitempty"`
+	KeyPath      string     `json:"key_path,omitempty"`
+	LastCommand  string     `json:"last_command,omitempty"`
+	LastOutput   string     `json:"last_output,omitempty"`
+	ErrorMessage string     `json:"error_message,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+}
