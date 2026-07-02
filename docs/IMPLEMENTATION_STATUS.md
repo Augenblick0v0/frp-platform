@@ -8,6 +8,9 @@
 - PostgreSQL 迁移和 SQLStore 持久化骨架。
 - `DATABASE_URL` 启用 PostgreSQL，未设置时使用内存存储。
 - Cloudflare 风格 Admin/User/Client WebUI 静态页面。
+- 客户端 frpc 配置渲染器。
+- 客户端本地 API：状态、日志、同步配置、启动/停止 frpc。
+- 客户端 frpc 进程管理骨架。
 - Docker Compose、Nginx、frps 部署模板。
 - Go 客户端骨架。
 
@@ -15,6 +18,6 @@
 
 - Redis 验证码和任务队列。
 - 真实 SMTP 邮件服务器接入。
-- 真实 frps/frpc 生命周期控制。
+- 服务端 frps 管理与真实证书/Nginx 自动化。
 - Let's Encrypt 自动证书申请。
 - Windows 安装包构建。
