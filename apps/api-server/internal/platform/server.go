@@ -10,11 +10,11 @@ import (
 )
 
 type Server struct {
-	store *Store
+	store Backend
 	mux   *http.ServeMux
 }
 
-func NewServer(store *Store) *Server {
+func NewServer(store Backend) *Server {
 	s := &Server{store: store, mux: http.NewServeMux()}
 	s.routes()
 	return s

@@ -22,7 +22,7 @@ go test ./...
 go run ./cmd/server
 ```
 
-默认监听 `:8080`。
+默认监听 `:8080`。如果设置 `DATABASE_URL`，API Server 会自动使用 PostgreSQL 并执行迁移；否则使用内存存储。
 
 ## 静态前端
 

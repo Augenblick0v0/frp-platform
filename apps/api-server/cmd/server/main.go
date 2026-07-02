@@ -1,10 +1,11 @@
 package main
 
 import (
-	"frp-platform/apps/api-server/internal/platform"
 	"log"
 	"net/http"
 	"os"
+
+	"frp-platform/apps/api-server/internal/platform"
 )
 
 func main() {
@@ -12,7 +13,22 @@ func main() {
 	if addr == "" {
 		addr = ":8080"
 	}
-	srv := platform.NewServer(platform.NewStore())
+
+	var backend platform.Backend
+	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
+		sqlStore, err := platform.NewSQLStore(dsn)
+		if err != nil {
+			log.Fatalf("connect postgres: %v", err)
+		}
+		defer sqlStore.Close()
+		backend = sqlStore
+		log.Printf("storage backend: postgres")
+	} else {
+		backend = platform.NewStore()
+		log.Printf("storage backend: in-memory")
+	}
+
+	srv := platform.NewServer(backend)
 	log.Printf("frp-platform api-server listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, srv.Handler()))
 }
