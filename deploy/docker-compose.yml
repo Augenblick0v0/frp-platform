@@ -48,6 +48,18 @@ services:
       SMTP_FROM_NAME: ${SMTP_FROM_NAME}
       SMTP_TLS: ${SMTP_TLS}
       SMTP_SKIP_VERIFY: ${SMTP_SKIP_VERIFY}
+      NGINX_CONF_DIR: ${NGINX_CONF_DIR}
+      ACME_WEBROOT: ${ACME_WEBROOT}
+      LETSENCRYPT_DIR: ${LETSENCRYPT_DIR}
+      FRP_VHOST_UPSTREAM: ${FRP_VHOST_UPSTREAM}
+      CERTBOT_BIN: ${CERTBOT_BIN}
+      CERTBOT_DRY_RUN: ${CERTBOT_DRY_RUN}
+      NGINX_TEST_CMD: ${NGINX_TEST_CMD}
+      NGINX_RELOAD_CMD: ${NGINX_RELOAD_CMD}
+    volumes:
+      - ./nginx/conf.d:/app/runtime/nginx-conf.d
+      - ./certbot/www:/var/www/certbot
+      - ./certbot/letsencrypt:/etc/letsencrypt
     depends_on:
       - postgres
       - redis

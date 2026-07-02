@@ -6,6 +6,7 @@ WORKDIR /src/apps/api-server
 RUN go build -o /out/api-server ./cmd/server
 
 FROM alpine:3.20
+RUN apk add --no-cache certbot bind-tools
 WORKDIR /app
 COPY --from=builder /out/api-server /app/api-server
 ENV HTTP_ADDR=:8080

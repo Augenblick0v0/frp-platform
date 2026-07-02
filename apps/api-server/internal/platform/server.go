@@ -10,18 +10,26 @@ import (
 )
 
 type Server struct {
-	store  Backend
-	mailer Mailer
-	mux    *http.ServeMux
+	store      Backend
+	mailer     Mailer
+	automation *Automation
+	mux        *http.ServeMux
 }
 
 func NewServer(store Backend) *Server { return NewServerWithMailer(store, LogMailer{}) }
 
 func NewServerWithMailer(store Backend, mailer Mailer) *Server {
+	return NewServerWithServices(store, mailer, AutomationFromEnv())
+}
+
+func NewServerWithServices(store Backend, mailer Mailer, automation *Automation) *Server {
 	if mailer == nil {
 		mailer = LogMailer{}
 	}
-	s := &Server{store: store, mailer: mailer, mux: http.NewServeMux()}
+	if automation == nil {
+		automation = AutomationFromEnv()
+	}
+	s := &Server{store: store, mailer: mailer, automation: automation, mux: http.NewServeMux()}
 	s.routes()
 	return s
 }
@@ -46,6 +54,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/admin/tunnels", s.adminTunnels)
 	s.mux.HandleFunc("/api/admin/settings", s.adminSettings)
 	s.mux.HandleFunc("/api/admin/settings/test-mail", s.adminTestMail)
+	s.mux.HandleFunc("/api/admin/domains/check-cname", s.adminCheckCNAME)
+	s.mux.HandleFunc("/api/admin/nginx/render-https", s.adminRenderHTTPSNginx)
+	s.mux.HandleFunc("/api/admin/nginx/test", s.adminTestNginx)
+	s.mux.HandleFunc("/api/admin/nginx/reload", s.adminReloadNginx)
+	s.mux.HandleFunc("/api/admin/certificates/request", s.adminRequestCertificate)
 }
 
 func cors(next http.Handler) http.Handler {
@@ -225,6 +238,79 @@ func (s *Server) adminRedeemCodes(w http.ResponseWriter, r *http.Request) {
 	}
 }
 func (s *Server) adminTunnels(w http.ResponseWriter, r *http.Request) { ok(w, s.store.AllTunnels()) }
+
+func (s *Server) adminCheckCNAME(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(405)
+		return
+	}
+	var in struct {
+		Domain string `json:"domain"`
+		Target string `json:"target"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	ok(w, s.automation.CheckCNAME(in.Domain, in.Target))
+}
+
+func (s *Server) adminRenderHTTPSNginx(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(405)
+		return
+	}
+	var in struct {
+		Domain string `json:"domain"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	res, err := s.automation.WriteHTTPSConfig(in.Domain)
+	if err != nil {
+		handleErr(w, err)
+		return
+	}
+	ok(w, res)
+}
+
+func (s *Server) adminRequestCertificate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(405)
+		return
+	}
+	var in struct {
+		Domain string `json:"domain"`
+		Email  string `json:"email"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	res, err := s.automation.RequestCertificate(r.Context(), in.Domain, in.Email)
+	if err != nil {
+		fail(w, 500, "CERTIFICATE_REQUEST_FAILED", err.Error()+"\n"+res.Output)
+		return
+	}
+	ok(w, res)
+}
+
+func (s *Server) adminTestNginx(w http.ResponseWriter, r *http.Request) {
+	out, err := s.automation.TestNginx(r.Context())
+	if err != nil {
+		fail(w, 500, "NGINX_TEST_FAILED", err.Error()+"\n"+out)
+		return
+	}
+	ok(w, map[string]any{"output": out})
+}
+
+func (s *Server) adminReloadNginx(w http.ResponseWriter, r *http.Request) {
+	out, err := s.automation.ReloadNginx(r.Context())
+	if err != nil {
+		fail(w, 500, "NGINX_RELOAD_FAILED", err.Error()+"\n"+out)
+		return
+	}
+	ok(w, map[string]any{"output": out})
+}
+
 func (s *Server) adminTestMail(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(405)

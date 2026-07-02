@@ -18,12 +18,17 @@
 - 发送验证码时调用 Mailer，未配置 SMTP 时使用日志 dry-run。
 - 管理后台测试邮件接口和按钮。
 - Docker Compose 自建 mail-server 服务和 DNS/账号配置说明。
+- CNAME 检测 API。
+- Nginx HTTPS 配置自动生成。
+- Certbot Let's Encrypt 证书申请命令封装，支持 dry-run。
+- Nginx test/reload 命令封装。
+- 管理后台域名与证书操作入口。
 - Docker Compose、Nginx、frps 部署模板。
 - Go 客户端骨架。
 
 ## 后续继续
 
 - Redis 验证码和任务队列。
-- 服务端 frps 管理与真实证书/Nginx 自动化。
+- 服务端 frps 管理、证书状态持久化和自动续期调度。
 - Let's Encrypt 自动证书申请。
 - Windows 安装包构建。
