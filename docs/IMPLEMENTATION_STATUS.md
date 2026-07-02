@@ -30,6 +30,10 @@
 - Windows 客户端打包脚本、PowerShell 构建脚本和 NSIS 安装器模板。
 - Linux 客户端 tar.gz 打包脚本、systemd service 和 install.sh。
 - 客户端构建支持携带官方 frpc 二进制，未提供时生成提示文件。
+- 管理员登录与后台 API 鉴权。
+- 默认管理员由 ADMIN_EMAIL/ADMIN_PASSWORD 配置。
+- PostgreSQL admin_users/admin_sessions 迁移与 seed。
+- 管理后台登录表单和 Bearer token 调用。
 - Docker Compose、Nginx、frps 部署模板。
 - Go 客户端骨架。
 

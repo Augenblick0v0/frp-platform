@@ -17,7 +17,10 @@ type Store struct {
 	mu            sync.Mutex
 	users         map[int64]User
 	usersByEmail  map[string]int64
+	admins        map[int64]AdminUser
+	adminsByEmail map[string]int64
 	sessions      map[string]int64
+	adminSessions map[string]int64
 	emailCodes    map[string]string
 	plans         map[int64]Plan
 	redeemCodes   map[string]RedeemCode
@@ -27,6 +30,7 @@ type Store struct {
 	usedTCP       map[int]bool
 	usedUDP       map[int]bool
 	nextUserID    int64
+	nextAdminID   int64
 	nextPlanID    int64
 	nextTunnelID  int64
 	settings      Settings
@@ -35,16 +39,50 @@ type Store struct {
 
 func NewStore() *Store {
 	s := &Store{
-		users: map[int64]User{}, usersByEmail: map[string]int64{}, sessions: map[string]int64{}, emailCodes: map[string]string{},
+		users: map[int64]User{}, usersByEmail: map[string]int64{}, admins: map[int64]AdminUser{}, adminsByEmail: map[string]int64{}, sessions: map[string]int64{}, adminSessions: map[string]int64{}, emailCodes: map[string]string{},
 		plans: map[int64]Plan{}, redeemCodes: map[string]RedeemCode{}, subscriptions: map[int64]Subscription{}, tunnels: map[int64]Tunnel{}, domains: map[string]int64{},
-		usedTCP: map[int]bool{}, usedUDP: map[int]bool{}, nextUserID: 1, nextPlanID: 1, nextTunnelID: 1,
+		usedTCP: map[int]bool{}, usedUDP: map[int]bool{}, nextUserID: 1, nextAdminID: 1, nextPlanID: 1, nextTunnelID: 1,
 		settings: Settings{PlatformDomain: "example.com", FRPEntryDomain: "frp.example.com", ServerAddr: "frp.example.com", FRPServerPort: 7000, TCPPortStart: 20000, TCPPortEnd: 29999, UDPPortStart: 30000, UDPPortEnd: 39999, PurchaseURL: "https://example.com/buy"},
 	}
 	plan := Plan{ID: s.nextPlanID, Name: "高级套餐", Description: "支持 TCP/UDP/HTTP/HTTPS、自定义域名和自动证书", DurationDays: 30, TrafficLimitBytes: 100 * 1024 * 1024 * 1024, BandwidthKbps: 10240, MaxTunnels: 20, MaxTCPTunnels: 10, MaxUDPTunnels: 10, MaxHTTPTunnels: 10, MaxHTTPSTunnels: 10, AllowTCP: true, AllowUDP: true, AllowHTTP: true, AllowHTTPS: true, AllowCustomDomain: true, MaxDomains: 10, AllowAutoCert: true, Status: "active"}
 	s.plans[plan.ID] = plan
 	s.nextPlanID++
 	s.redeemCodes["DEMO-PLAN-2026"] = RedeemCode{Code: "DEMO-PLAN-2026", PlanID: plan.ID, Status: "unused"}
+	admin := AdminUser{ID: s.nextAdminID, Email: strings.ToLower(getenv("ADMIN_EMAIL", "admin@example.com")), Password: getenv("ADMIN_PASSWORD", "admin123456"), Status: "active", CreatedAt: time.Now()}
+	s.nextAdminID++
+	s.admins[admin.ID] = admin
+	s.adminsByEmail[admin.Email] = admin.ID
 	return s
+}
+
+func (s *Store) AdminLogin(email, password string) (string, AdminUser, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id, ok := s.adminsByEmail[strings.ToLower(strings.TrimSpace(email))]
+	if !ok {
+		return "", AdminUser{}, ErrUnauthorized
+	}
+	admin := s.admins[id]
+	if admin.Password != password || admin.Status != "active" {
+		return "", AdminUser{}, ErrUnauthorized
+	}
+	token := fmt.Sprintf("admin-token-%d-%d", admin.ID, time.Now().UnixNano())
+	s.adminSessions[token] = admin.ID
+	return token, admin, nil
+}
+
+func (s *Store) AdminByToken(token string) (AdminUser, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id, ok := s.adminSessions[token]
+	if !ok {
+		return AdminUser{}, ErrUnauthorized
+	}
+	admin := s.admins[id]
+	if admin.Status != "active" {
+		return AdminUser{}, ErrUnauthorized
+	}
+	return admin, nil
 }
 
 func (s *Store) SendEmailCode(email, purpose string) string {

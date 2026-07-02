@@ -37,7 +37,13 @@ func NewSQLStore(dsn string) (*SQLStore, error) {
 func (s *SQLStore) Close() error   { return s.db.Close() }
 func (s *SQLStore) Migrate() error { _, err := s.db.Exec(postgresSchema); return err }
 func (s *SQLStore) SeedDefaults() error {
+	adminEmail := strings.ToLower(getenv("ADMIN_EMAIL", "admin@example.com"))
+	adminPassword := getenv("ADMIN_PASSWORD", "admin123456")
+	if _, err := s.db.Exec(`INSERT INTO admin_users (id,email,password_hash,status) VALUES (1,$1,$2,'active') ON CONFLICT (id) DO NOTHING`, adminEmail, adminPassword); err != nil {
+		return err
+	}
 	_, err := s.db.Exec(`
+SELECT setval(pg_get_serial_sequence('admin_users','id'), GREATEST((SELECT MAX(id) FROM admin_users), 1));
 INSERT INTO plans (id,name,description,duration_days,traffic_limit_bytes,bandwidth_limit_kbps,max_tunnels,max_tcp_tunnels,max_udp_tunnels,max_http_tunnels,max_https_tunnels,allow_tcp,allow_udp,allow_http,allow_https,allow_custom_domain,max_domains,allow_auto_cert,status)
 VALUES (1,'高级套餐','支持 TCP/UDP/HTTP/HTTPS、自定义域名和自动证书',30,107374182400,10240,20,10,10,10,10,true,true,true,true,true,10,true,'active')
 ON CONFLICT (id) DO NOTHING;
@@ -47,6 +53,32 @@ INSERT INTO system_settings (key,value) VALUES
 ('platform_domain','example.com'),('frp_entry_domain','frp.example.com'),('server_addr','frp.example.com'),('frp_server_port','7000'),('tcp_port_start','20000'),('tcp_port_end','29999'),('udp_port_start','30000'),('udp_port_end','39999'),('purchase_url','https://example.com/buy')
 ON CONFLICT (key) DO NOTHING;`)
 	return err
+}
+
+func (s *SQLStore) AdminLogin(email, password string) (string, AdminUser, error) {
+	var admin AdminUser
+	err := s.db.QueryRow(`SELECT id,email,password_hash,status,created_at FROM admin_users WHERE email=$1`, strings.ToLower(strings.TrimSpace(email))).Scan(&admin.ID, &admin.Email, &admin.Password, &admin.Status, &admin.CreatedAt)
+	if err != nil {
+		return "", AdminUser{}, ErrUnauthorized
+	}
+	if admin.Password != password || admin.Status != "active" {
+		return "", AdminUser{}, ErrUnauthorized
+	}
+	token := fmt.Sprintf("admin-token-%d-%d", admin.ID, time.Now().UnixNano())
+	_, err = s.db.Exec(`INSERT INTO admin_sessions (token,admin_user_id,expires_at) VALUES ($1,$2,$3)`, token, admin.ID, time.Now().Add(24*time.Hour))
+	if err != nil {
+		return "", AdminUser{}, err
+	}
+	return token, admin, nil
+}
+
+func (s *SQLStore) AdminByToken(token string) (AdminUser, error) {
+	var admin AdminUser
+	err := s.db.QueryRow(`SELECT a.id,a.email,a.password_hash,a.status,a.created_at FROM admin_sessions s JOIN admin_users a ON a.id=s.admin_user_id WHERE s.token=$1 AND s.expires_at>now()`, token).Scan(&admin.ID, &admin.Email, &admin.Password, &admin.Status, &admin.CreatedAt)
+	if err != nil || admin.Status != "active" {
+		return AdminUser{}, ErrUnauthorized
+	}
+	return admin, nil
 }
 
 func (s *SQLStore) SendEmailCode(email, purpose string) string {

@@ -49,18 +49,20 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/client/heartbeat", s.auth(s.clientHeartbeat))
 	s.mux.HandleFunc("/api/client/tunnels", s.auth(s.clientTunnels))
 	s.mux.HandleFunc("/api/client/traffic", s.auth(s.clientTraffic))
-	s.mux.HandleFunc("/api/admin/dashboard", s.adminDashboard)
-	s.mux.HandleFunc("/api/admin/plans", s.adminPlans)
-	s.mux.HandleFunc("/api/admin/users", s.adminUsers)
-	s.mux.HandleFunc("/api/admin/redeem-codes", s.adminRedeemCodes)
-	s.mux.HandleFunc("/api/admin/tunnels", s.adminTunnels)
-	s.mux.HandleFunc("/api/admin/settings", s.adminSettings)
-	s.mux.HandleFunc("/api/admin/settings/test-mail", s.adminTestMail)
-	s.mux.HandleFunc("/api/admin/domains/check-cname", s.adminCheckCNAME)
-	s.mux.HandleFunc("/api/admin/nginx/render-https", s.adminRenderHTTPSNginx)
-	s.mux.HandleFunc("/api/admin/nginx/test", s.adminTestNginx)
-	s.mux.HandleFunc("/api/admin/nginx/reload", s.adminReloadNginx)
-	s.mux.HandleFunc("/api/admin/certificates/request", s.adminRequestCertificate)
+	s.mux.HandleFunc("/api/admin/login", s.adminLogin)
+	s.mux.HandleFunc("/api/admin/me", s.adminAuth(s.adminMe))
+	s.mux.HandleFunc("/api/admin/dashboard", s.adminAuth(s.adminDashboard))
+	s.mux.HandleFunc("/api/admin/plans", s.adminAuth(s.adminPlans))
+	s.mux.HandleFunc("/api/admin/users", s.adminAuth(s.adminUsers))
+	s.mux.HandleFunc("/api/admin/redeem-codes", s.adminAuth(s.adminRedeemCodes))
+	s.mux.HandleFunc("/api/admin/tunnels", s.adminAuth(s.adminTunnels))
+	s.mux.HandleFunc("/api/admin/settings", s.adminAuth(s.adminSettings))
+	s.mux.HandleFunc("/api/admin/settings/test-mail", s.adminAuth(s.adminTestMail))
+	s.mux.HandleFunc("/api/admin/domains/check-cname", s.adminAuth(s.adminCheckCNAME))
+	s.mux.HandleFunc("/api/admin/nginx/render-https", s.adminAuth(s.adminRenderHTTPSNginx))
+	s.mux.HandleFunc("/api/admin/nginx/test", s.adminAuth(s.adminTestNginx))
+	s.mux.HandleFunc("/api/admin/nginx/reload", s.adminAuth(s.adminReloadNginx))
+	s.mux.HandleFunc("/api/admin/certificates/request", s.adminAuth(s.adminRequestCertificate))
 }
 
 func cors(next http.Handler) http.Handler {
@@ -91,6 +93,44 @@ func (s *Server) auth(next func(http.ResponseWriter, *http.Request, User)) http.
 		}
 		next(w, r, u)
 	}
+}
+
+func (s *Server) adminLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(405)
+		return
+	}
+	var in struct{ Email, Password string }
+	if !decode(w, r, &in) {
+		return
+	}
+	token, admin, err := s.store.AdminLogin(in.Email, in.Password)
+	if err != nil {
+		handleErr(w, err)
+		return
+	}
+	ok(w, map[string]any{"access_token": token, "expires_in": 86400, "admin": admin})
+}
+
+func (s *Server) adminAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if _, err := s.store.AdminByToken(token); err != nil {
+			fail(w, http.StatusUnauthorized, "ADMIN_UNAUTHORIZED", "管理员未登录或登录已过期")
+			return
+		}
+		next(w, r)
+	}
+}
+
+func (s *Server) adminMe(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	admin, err := s.store.AdminByToken(token)
+	if err != nil {
+		handleErr(w, err)
+		return
+	}
+	ok(w, admin)
 }
 
 func (s *Server) sendCode(w http.ResponseWriter, r *http.Request) {

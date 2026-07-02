@@ -87,3 +87,17 @@ func request(t *testing.T, s *Server, method, path string, body map[string]any, 
 	s.Handler().ServeHTTP(rr, req)
 	return rr
 }
+
+func TestAdminLoginProtectsAdminAPI(t *testing.T) {
+	s := NewServer(NewStore())
+	rr := request(t, s, "GET", "/api/admin/dashboard", nil, "")
+	if rr.Code != 401 {
+		t.Fatalf("expected admin dashboard without token to be 401, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	login := post(t, s, "/api/admin/login", map[string]any{"email": "admin@example.com", "password": "admin123456"}, "")
+	token := login["access_token"].(string)
+	rr = request(t, s, "GET", "/api/admin/dashboard", nil, token)
+	if rr.Code != 200 {
+		t.Fatalf("expected admin dashboard with token to be 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}

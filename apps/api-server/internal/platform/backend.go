@@ -1,6 +1,8 @@
 package platform
 
 type Backend interface {
+	AdminLogin(email, password string) (string, AdminUser, error)
+	AdminByToken(token string) (AdminUser, error)
 	SendEmailCode(email, purpose string) string
 	Register(email, code, password string) (User, error)
 	Login(email, password string) (string, User, error)

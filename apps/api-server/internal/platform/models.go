@@ -105,3 +105,11 @@ type TrafficSummary struct {
 	TrafficLeftBytes  int64 `json:"traffic_left_bytes"`
 	TodayBytes        int64 `json:"today_bytes"`
 }
+
+type AdminUser struct {
+	ID        int64     `json:"id"`
+	Email     string    `json:"email"`
+	Password  string    `json:"-"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+}
