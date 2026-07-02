@@ -24,6 +24,8 @@ dist/windows/FrpTunnelClient-0.1.0-windows-amd64.zip
 
 ```bash
 FRPC_WINDOWS_PATH=/path/to/frpc.exe ./client/packaging/windows/build-windows.sh
+# 或
+FRPC_WINDOWS_URL=https://github.com/fatedier/frp/releases/download/<version>/<windows-amd64-zip> ./client/packaging/windows/build-windows.sh
 ```
 
 Windows PowerShell 可使用：
@@ -42,6 +44,8 @@ VERSION=0.1.0 ./client/packaging/linux/build-linux.sh
 
 ```bash
 FRPC_LINUX_PATH=/path/to/frpc ./client/packaging/linux/build-linux.sh
+# 或
+FRPC_LINUX_URL=https://github.com/fatedier/frp/releases/download/<version>/<linux-amd64-tar.gz> ./client/packaging/linux/build-linux.sh
 ```
 
 输出：

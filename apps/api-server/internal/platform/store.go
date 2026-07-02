@@ -52,7 +52,7 @@ func NewStore() *Store {
 	s.plans[plan.ID] = plan
 	s.nextPlanID++
 	s.redeemCodes["DEMO-PLAN-2026"] = RedeemCode{Code: "DEMO-PLAN-2026", PlanID: plan.ID, Status: "unused"}
-	admin := AdminUser{ID: s.nextAdminID, Email: strings.ToLower(getenv("ADMIN_EMAIL", "admin@example.com")), Password: getenv("ADMIN_PASSWORD", "admin123456"), Status: "active", CreatedAt: time.Now()}
+	admin := AdminUser{ID: s.nextAdminID, Email: strings.ToLower(getenv("ADMIN_EMAIL", "admin@example.com")), Password: mustHashPassword(getenv("ADMIN_PASSWORD", "admin123456")), Status: "active", CreatedAt: time.Now()}
 	s.nextAdminID++
 	s.admins[admin.ID] = admin
 	s.adminsByEmail[admin.Email] = admin.ID
@@ -67,7 +67,7 @@ func (s *Store) AdminLogin(email, password string) (string, AdminUser, error) {
 		return "", AdminUser{}, ErrUnauthorized
 	}
 	admin := s.admins[id]
-	if admin.Password != password || admin.Status != "active" {
+	if !VerifyPassword(admin.Password, password) || admin.Status != "active" {
 		return "", AdminUser{}, ErrUnauthorized
 	}
 	token := fmt.Sprintf("admin-token-%d-%d", admin.ID, time.Now().UnixNano())
@@ -110,7 +110,11 @@ func (s *Store) Register(email, code, password string) (User, error) {
 	if _, ok := s.usersByEmail[email]; ok {
 		return User{}, ErrConflict
 	}
-	u := User{ID: s.nextUserID, Email: email, Password: password, Status: "active", CreatedAt: time.Now()}
+	hash, err := HashPassword(password)
+	if err != nil {
+		return User{}, err
+	}
+	u := User{ID: s.nextUserID, Email: email, Password: hash, Status: "active", CreatedAt: time.Now()}
 	s.nextUserID++
 	s.users[u.ID] = u
 	s.usersByEmail[email] = u.ID
@@ -125,7 +129,7 @@ func (s *Store) Login(email, password string) (string, User, error) {
 		return "", User{}, ErrUnauthorized
 	}
 	u := s.users[id]
-	if u.Password != password || u.Status != "active" {
+	if !VerifyPassword(u.Password, password) || u.Status != "active" {
 		return "", User{}, ErrUnauthorized
 	}
 	token := fmt.Sprintf("token-%d-%d", u.ID, time.Now().UnixNano())

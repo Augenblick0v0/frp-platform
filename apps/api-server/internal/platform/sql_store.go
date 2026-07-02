@@ -39,7 +39,7 @@ func (s *SQLStore) Migrate() error { _, err := s.db.Exec(postgresSchema); return
 func (s *SQLStore) SeedDefaults() error {
 	adminEmail := strings.ToLower(getenv("ADMIN_EMAIL", "admin@example.com"))
 	adminPassword := getenv("ADMIN_PASSWORD", "admin123456")
-	if _, err := s.db.Exec(`INSERT INTO admin_users (id,email,password_hash,status) VALUES (1,$1,$2,'active') ON CONFLICT (id) DO NOTHING`, adminEmail, adminPassword); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO admin_users (id,email,password_hash,status) VALUES (1,$1,$2,'active') ON CONFLICT (id) DO NOTHING`, adminEmail, mustHashPassword(adminPassword)); err != nil {
 		return err
 	}
 	_, err := s.db.Exec(`
@@ -61,7 +61,7 @@ func (s *SQLStore) AdminLogin(email, password string) (string, AdminUser, error)
 	if err != nil {
 		return "", AdminUser{}, ErrUnauthorized
 	}
-	if admin.Password != password || admin.Status != "active" {
+	if !VerifyPassword(admin.Password, password) || admin.Status != "active" {
 		return "", AdminUser{}, ErrUnauthorized
 	}
 	token := fmt.Sprintf("admin-token-%d-%d", admin.ID, time.Now().UnixNano())
@@ -100,7 +100,7 @@ func (s *SQLStore) Register(email, code, password string) (User, error) {
 	}
 	defer tx.Rollback()
 	var u User
-	err = tx.QueryRow(`INSERT INTO users (email,password_hash,status,email_verified_at) VALUES ($1,$2,'active',now()) RETURNING id,email,password_hash,status,created_at`, email, password).Scan(&u.ID, &u.Email, &u.Password, &u.Status, &u.CreatedAt)
+	err = tx.QueryRow(`INSERT INTO users (email,password_hash,status,email_verified_at) VALUES ($1,$2,'active',now()) RETURNING id,email,password_hash,status,created_at`, email, mustHashPassword(password)).Scan(&u.ID, &u.Email, &u.Password, &u.Status, &u.CreatedAt)
 	if err != nil {
 		if isUnique(err) {
 			return User{}, ErrConflict
@@ -120,7 +120,7 @@ func (s *SQLStore) Login(email, password string) (string, User, error) {
 	if err != nil {
 		return "", User{}, ErrUnauthorized
 	}
-	if u.Password != password || u.Status != "active" {
+	if !VerifyPassword(u.Password, password) || u.Status != "active" {
 		return "", User{}, ErrUnauthorized
 	}
 	token := fmt.Sprintf("token-%d-%d", u.ID, time.Now().UnixNano())

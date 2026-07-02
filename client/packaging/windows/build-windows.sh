@@ -5,6 +5,7 @@ DIST="$ROOT/dist/windows"
 APP="$DIST/FrpTunnelClient"
 VERSION="${VERSION:-0.1.0}"
 FRPC_WINDOWS_PATH="${FRPC_WINDOWS_PATH:-}"
+FRPC_WINDOWS_URL="${FRPC_WINDOWS_URL:-}"
 rm -rf "$DIST"
 mkdir -p "$APP/webui" "$APP/config" "$APP/logs"
 cd "$ROOT/client/frp-client"
@@ -19,9 +20,14 @@ cat > "$APP/config/client.example.json" <<JSON
 JSON
 if [[ -n "$FRPC_WINDOWS_PATH" && -f "$FRPC_WINDOWS_PATH" ]]; then
   cp "$FRPC_WINDOWS_PATH" "$APP/frpc.exe"
+elif [[ -n "$FRPC_WINDOWS_URL" ]]; then
+  TMPZIP="$(mktemp -t frpc-windows-XXXX.zip)"
+  curl -LfsS "$FRPC_WINDOWS_URL" -o "$TMPZIP"
+  unzip -p "$TMPZIP" '*/frpc.exe' > "$APP/frpc.exe"
+  rm -f "$TMPZIP"
 else
   cat > "$APP/README-FRPC.txt" <<'TXT'
-请把 Windows 版 frpc.exe 放到本目录。
+请把 Windows 版 frpc.exe 放到本目录，或构建时设置 FRPC_WINDOWS_URL 自动下载官方 release zip。
 下载地址：https://github.com/fatedier/frp/releases
 安装包脚本会把本目录整体安装到 Program Files。
 TXT

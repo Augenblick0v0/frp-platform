@@ -5,6 +5,7 @@ DIST="$ROOT/dist/linux"
 APP="$DIST/frp-client"
 VERSION="${VERSION:-0.1.0}"
 FRPC_LINUX_PATH="${FRPC_LINUX_PATH:-}"
+FRPC_LINUX_URL="${FRPC_LINUX_URL:-}"
 rm -rf "$DIST"
 mkdir -p "$APP/webui" "$APP/config" "$APP/logs"
 cd "$ROOT/client/frp-client"
@@ -21,9 +22,14 @@ cat > "$APP/config/client.example.json" <<JSON
 JSON
 if [[ -n "$FRPC_LINUX_PATH" && -f "$FRPC_LINUX_PATH" ]]; then
   cp "$FRPC_LINUX_PATH" "$APP/frpc"
+elif [[ -n "$FRPC_LINUX_URL" ]]; then
+  TMPGZ="$(mktemp -t frpc-linux-XXXX.tar.gz)"
+  curl -LfsS "$FRPC_LINUX_URL" -o "$TMPGZ"
+  tar -xOzf "$TMPGZ" --wildcards '*/frpc' > "$APP/frpc"
+  rm -f "$TMPGZ"
 else
   cat > "$APP/README-FRPC.txt" <<'TXT'
-请把 Linux amd64 版 frpc 放到 /opt/frp-client/frpc 或当前目录后再执行 install.sh。
+请把 Linux amd64 版 frpc 放到 /opt/frp-client/frpc，或构建时设置 FRPC_LINUX_URL 自动下载官方 release tar.gz。
 下载地址：https://github.com/fatedier/frp/releases
 TXT
 fi
