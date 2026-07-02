@@ -13,6 +13,7 @@ Generated: 2026-07-03T00:22:03+08:00
 - API server build: `go build ./apps/api-server/cmd/server` passed.
 - Client build: `go build ./client/frp-client` passed.
 - Docker Compose config: `docker compose -f deploy/docker-compose.yml --env-file deploy/.env.example config` passed.
+- Docker image build: `docker compose --env-file .env.example build api-server admin-web user-web` passed in `deploy/`.
 - Final API smoke: register/login/redeem/create TCP/create HTTP/report traffic/admin dashboard/request certificate/renew certificate/operation logs passed.
 - Password storage: user/admin passwords are salted hash strings; legacy plaintext verify remains only for old dev rows.
 - Windows portable package generated: `dist/windows/FrpTunnelClient-0.1.0-windows-amd64.zip`.
@@ -46,4 +47,3 @@ Generated: 2026-07-03T00:22:03+08:00
 
 - **Real frpc binaries:** Packaging supports `FRPC_WINDOWS_PATH`/`FRPC_LINUX_PATH` and `FRPC_WINDOWS_URL`/`FRPC_LINUX_URL` to include official frpc binaries without vendoring them in git.
 - **Real production reload commands:** Nginx/frps command hooks are configurable but default to no-op for safe deployment.
-- **Docker image build verification:** Compose config is verified; a full docker build was attempted but interrupted after several minutes because the base image download was extremely slow in this environment. Local Go builds and packaging builds passed.
