@@ -4,6 +4,11 @@ Generated: 2026-07-03T00:22:03+08:00
 
 ## Current Evidence
 
+- Production deploy guide: `deploy/PRODUCTION.md`.
+- Release scripts: `scripts/release.sh` and `scripts/verify-release.sh`.
+- Release manifest: `docs/releases/RELEASE-0.1.1.md`.
+- Release checksums: `docs/releases/SHA256SUMS-0.1.1.txt`.
+
 - Go tests: `./scripts/dev-smoke.sh` passed.
 - API server build: `go build ./apps/api-server/cmd/server` passed.
 - Client build: `go build ./client/frp-client` passed.
@@ -35,6 +40,7 @@ Generated: 2026-07-03T00:22:03+08:00
 | Linux 客户端 WebUI | client/frp-client local server and apps/client-webui | PASS |
 | Windows 安装包 | client/packaging/windows NSIS scripts and build-windows scripts | PASS |
 | 客户端 frpc 配置和进程管理 | clientcore RenderFRPCConfig and Manager Start/Stop | PASS |
+| 生产部署文档和发布清单 | deploy/PRODUCTION.md, scripts/release.sh, docs/releases/RELEASE-0.1.1.md | PASS |
 
 ## Remaining Gaps / Risks
 

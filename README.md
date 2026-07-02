@@ -41,3 +41,11 @@ cd deploy
 cp .env.example .env
 docker compose up -d
 ```
+
+
+## 生产部署与发布
+
+- 生产部署手册：`deploy/PRODUCTION.md`
+- 发布脚本：`./scripts/release.sh 0.1.1`
+- 发布校验：`./scripts/verify-release.sh 0.1.1`
+- 最终验收审计：`docs/FINAL_ACCEPTANCE_AUDIT.md`

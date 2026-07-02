@@ -1,0 +1,4 @@
+7ebbe750ce447a0173d0fc9ed90a6f1a8a52d0294d7a9596391c49e00ea767cc  ./linux/FrpTunnelClient-0.1.1-linux-amd64.tar.gz
+dd986eabf7b9614c0532ff0b4b7d89db345d36ff11d50eda438420e8e588b6a5  ./windows/FrpTunnelClient-0.1.1-windows-amd64.zip
+5aa2710d1be137ae20ad4b4d0b080e84b5df4ee259fc2ea6977efbf2a55bbc28  ./windows/FrpTunnelClient/frp-client.exe
+0017071bc381dd362010ff8471fc2d46ea849d129f0d076ff83ec7679029a276  ./windows/installer.nsi
