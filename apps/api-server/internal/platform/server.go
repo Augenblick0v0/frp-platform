@@ -13,23 +13,27 @@ type Server struct {
 	store      Backend
 	mailer     Mailer
 	automation *Automation
+	frps       *FRPSManager
 	mux        *http.ServeMux
 }
 
 func NewServer(store Backend) *Server { return NewServerWithMailer(store, LogMailer{}) }
 
 func NewServerWithMailer(store Backend, mailer Mailer) *Server {
-	return NewServerWithServices(store, mailer, AutomationFromEnv())
+	return NewServerWithServices(store, mailer, AutomationFromEnv(), FRPSManagerFromEnv())
 }
 
-func NewServerWithServices(store Backend, mailer Mailer, automation *Automation) *Server {
+func NewServerWithServices(store Backend, mailer Mailer, automation *Automation, frps *FRPSManager) *Server {
 	if mailer == nil {
 		mailer = LogMailer{}
 	}
 	if automation == nil {
 		automation = AutomationFromEnv()
 	}
-	s := &Server{store: store, mailer: mailer, automation: automation, mux: http.NewServeMux()}
+	if frps == nil {
+		frps = FRPSManagerFromEnv()
+	}
+	s := &Server{store: store, mailer: mailer, automation: automation, frps: frps, mux: http.NewServeMux()}
 	s.routes()
 	return s
 }
@@ -64,6 +68,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/admin/nginx/reload", s.adminAuth(s.adminReloadNginx))
 	s.mux.HandleFunc("/api/admin/certificates", s.adminAuth(s.adminCertificates))
 	s.mux.HandleFunc("/api/admin/certificates/request", s.adminAuth(s.adminRequestCertificate))
+	s.mux.HandleFunc("/api/admin/frps/status", s.adminAuth(s.adminFRPSStatus))
+	s.mux.HandleFunc("/api/admin/frps/config", s.adminAuth(s.adminFRPSConfig))
+	s.mux.HandleFunc("/api/admin/frps/logs", s.adminAuth(s.adminFRPSLogs))
+	s.mux.HandleFunc("/api/admin/frps/restart", s.adminAuth(s.adminFRPSRestart))
+	s.mux.HandleFunc("/api/admin/frps/reload", s.adminAuth(s.adminFRPSReload))
 }
 
 func cors(next http.Handler) http.Handler {
@@ -337,6 +346,54 @@ func (s *Server) adminRenderHTTPSNginx(w http.ResponseWriter, r *http.Request) {
 	res, err := s.automation.WriteHTTPSConfig(in.Domain)
 	if err != nil {
 		handleErr(w, err)
+		return
+	}
+	ok(w, res)
+}
+
+func (s *Server) adminFRPSStatus(w http.ResponseWriter, r *http.Request) {
+	ok(w, s.frps.Status(r.Context()))
+}
+
+func (s *Server) adminFRPSConfig(w http.ResponseWriter, r *http.Request) {
+	text, err := s.frps.Config()
+	if err != nil {
+		fail(w, 500, "FRPS_CONFIG_READ_FAILED", err.Error())
+		return
+	}
+	ok(w, map[string]any{"config": text, "path": s.frps.ConfigPath})
+}
+
+func (s *Server) adminFRPSLogs(w http.ResponseWriter, r *http.Request) {
+	text, err := s.frps.Logs(65536)
+	if err != nil {
+		fail(w, 500, "FRPS_LOG_READ_FAILED", err.Error())
+		return
+	}
+	ok(w, map[string]any{"logs": text, "path": s.frps.LogPath})
+}
+
+func (s *Server) adminFRPSRestart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(405)
+		return
+	}
+	res, err := s.frps.Restart(r.Context())
+	if err != nil {
+		fail(w, 500, "FRPS_RESTART_FAILED", err.Error()+"\n"+res.Output)
+		return
+	}
+	ok(w, res)
+}
+
+func (s *Server) adminFRPSReload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(405)
+		return
+	}
+	res, err := s.frps.Reload(r.Context())
+	if err != nil {
+		fail(w, 500, "FRPS_RELOAD_FAILED", err.Error()+"\n"+res.Output)
 		return
 	}
 	ok(w, res)

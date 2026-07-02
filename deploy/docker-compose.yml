@@ -10,6 +10,8 @@ services:
       - ./nginx/conf.d:/etc/nginx/conf.d
       - ./certbot/www:/var/www/certbot
       - ./certbot/letsencrypt:/etc/letsencrypt
+      - ./frps:/app/runtime/frps:ro
+      - ./logs/frps:/app/runtime/logs/frps
       - ./logs/nginx:/var/log/nginx
     depends_on:
       - api-server
@@ -58,10 +60,17 @@ services:
       CERTBOT_DRY_RUN: ${CERTBOT_DRY_RUN}
       NGINX_TEST_CMD: ${NGINX_TEST_CMD}
       NGINX_RELOAD_CMD: ${NGINX_RELOAD_CMD}
+      FRPS_CONFIG_PATH: ${FRPS_CONFIG_PATH}
+      FRPS_LOG_PATH: ${FRPS_LOG_PATH}
+      FRPS_STATUS_CMD: ${FRPS_STATUS_CMD}
+      FRPS_RESTART_CMD: ${FRPS_RESTART_CMD}
+      FRPS_RELOAD_CMD: ${FRPS_RELOAD_CMD}
     volumes:
       - ./nginx/conf.d:/app/runtime/nginx-conf.d
       - ./certbot/www:/var/www/certbot
       - ./certbot/letsencrypt:/etc/letsencrypt
+      - ./frps:/app/runtime/frps:ro
+      - ./logs/frps:/app/runtime/logs/frps
     depends_on:
       - postgres
       - redis

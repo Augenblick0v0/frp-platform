@@ -104,7 +104,7 @@ func TestAdminLoginProtectsAdminAPI(t *testing.T) {
 
 func TestCertificateRequestPersistsDryRunRecord(t *testing.T) {
 	store := NewStore()
-	s := NewServerWithServices(store, LogMailer{}, &Automation{NginxConfDir: t.TempDir(), WebrootDir: "/tmp/acme", LetsEncryptDir: "/tmp/letsencrypt", FRPVhostURL: "http://frps:8080", CertbotBin: "certbot", DryRun: true})
+	s := NewServerWithServices(store, LogMailer{}, &Automation{NginxConfDir: t.TempDir(), WebrootDir: "/tmp/acme", LetsEncryptDir: "/tmp/letsencrypt", FRPVhostURL: "http://frps:8080", CertbotBin: "certbot", DryRun: true}, nil)
 	login := post(t, s, "/api/admin/login", map[string]any{"email": "admin@example.com", "password": "admin123456"}, "")
 	token := login["access_token"].(string)
 	post(t, s, "/api/admin/certificates/request", map[string]any{"domain": "cert.example.com", "email": "admin@example.com"}, token)
