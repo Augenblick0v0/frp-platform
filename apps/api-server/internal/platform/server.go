@@ -10,12 +10,18 @@ import (
 )
 
 type Server struct {
-	store Backend
-	mux   *http.ServeMux
+	store  Backend
+	mailer Mailer
+	mux    *http.ServeMux
 }
 
-func NewServer(store Backend) *Server {
-	s := &Server{store: store, mux: http.NewServeMux()}
+func NewServer(store Backend) *Server { return NewServerWithMailer(store, LogMailer{}) }
+
+func NewServerWithMailer(store Backend, mailer Mailer) *Server {
+	if mailer == nil {
+		mailer = LogMailer{}
+	}
+	s := &Server{store: store, mailer: mailer, mux: http.NewServeMux()}
 	s.routes()
 	return s
 }
@@ -39,6 +45,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/admin/redeem-codes", s.adminRedeemCodes)
 	s.mux.HandleFunc("/api/admin/tunnels", s.adminTunnels)
 	s.mux.HandleFunc("/api/admin/settings", s.adminSettings)
+	s.mux.HandleFunc("/api/admin/settings/test-mail", s.adminTestMail)
 }
 
 func cors(next http.Handler) http.Handler {
@@ -83,6 +90,10 @@ func (s *Server) sendCode(w http.ResponseWriter, r *http.Request) {
 		in.Purpose = "register"
 	}
 	code := s.store.SendEmailCode(in.Email, in.Purpose)
+	if err := s.mailer.SendVerificationCode(in.Email, code, in.Purpose); err != nil {
+		fail(w, 500, "MAIL_SEND_FAILED", err.Error())
+		return
+	}
 	ok(w, map[string]any{"expires_in": 600, "dev_code": code})
 }
 func (s *Server) register(w http.ResponseWriter, r *http.Request) {
@@ -214,6 +225,24 @@ func (s *Server) adminRedeemCodes(w http.ResponseWriter, r *http.Request) {
 	}
 }
 func (s *Server) adminTunnels(w http.ResponseWriter, r *http.Request) { ok(w, s.store.AllTunnels()) }
+func (s *Server) adminTestMail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(405)
+		return
+	}
+	var in struct {
+		Email string `json:"email"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	if err := s.mailer.Send(in.Email, "FRP 平台测试邮件", "这是一封来自 FRP 平台的测试邮件。邮件服务器配置可用。\n"); err != nil {
+		fail(w, 500, "MAIL_SEND_FAILED", err.Error())
+		return
+	}
+	ok(w, map[string]any{"sent": true})
+}
+
 func (s *Server) adminSettings(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPut {
 		var in Settings

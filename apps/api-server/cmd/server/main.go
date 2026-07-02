@@ -28,7 +28,7 @@ func main() {
 		log.Printf("storage backend: in-memory")
 	}
 
-	srv := platform.NewServer(backend)
+	srv := platform.NewServerWithMailer(backend, platform.MailerFromEnv())
 	log.Printf("frp-platform api-server listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, srv.Handler()))
 }
