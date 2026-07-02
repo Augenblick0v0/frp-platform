@@ -579,3 +579,26 @@ func (s *SQLStore) Certificates() []CertificateRecord {
 	}
 	return out
 }
+
+func (s *SQLStore) RecordAdminOperation(logEntry AdminOperationLog) error {
+	_, err := s.db.Exec(`INSERT INTO admin_operation_logs (admin_id,admin_email,action,target,detail,ip,created_at) VALUES ($1,$2,$3,$4,$5,$6,coalesce(nullif($7,'0001-01-01T00:00:00Z')::timestamptz, now()))`, logEntry.AdminID, logEntry.AdminEmail, logEntry.Action, logEntry.Target, logEntry.Detail, logEntry.IP, logEntry.CreatedAt.Format(time.RFC3339))
+	return err
+}
+
+func (s *SQLStore) AdminOperationLogs(limit int) []AdminOperationLog {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := s.db.Query(`SELECT id,coalesce(admin_id,0),coalesce(admin_email,''),action,coalesce(target,''),coalesce(detail,''),coalesce(ip,''),created_at FROM admin_operation_logs ORDER BY created_at DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := []AdminOperationLog{}
+	for rows.Next() {
+		var item AdminOperationLog
+		_ = rows.Scan(&item.ID, &item.AdminID, &item.AdminEmail, &item.Action, &item.Target, &item.Detail, &item.IP, &item.CreatedAt)
+		out = append(out, item)
+	}
+	return out
+}

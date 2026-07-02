@@ -128,3 +128,14 @@ type CertificateRecord struct {
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
 }
+
+type AdminOperationLog struct {
+	ID         int64     `json:"id"`
+	AdminID    int64     `json:"admin_id"`
+	AdminEmail string    `json:"admin_email"`
+	Action     string    `json:"action"`
+	Target     string    `json:"target"`
+	Detail     string    `json:"detail"`
+	IP         string    `json:"ip"`
+	CreatedAt  time.Time `json:"created_at"`
+}

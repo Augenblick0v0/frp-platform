@@ -73,6 +73,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/admin/frps/logs", s.adminAuth(s.adminFRPSLogs))
 	s.mux.HandleFunc("/api/admin/frps/restart", s.adminAuth(s.adminFRPSRestart))
 	s.mux.HandleFunc("/api/admin/frps/reload", s.adminAuth(s.adminFRPSReload))
+	s.mux.HandleFunc("/api/admin/operation-logs", s.adminAuth(s.adminOperationLogs))
 }
 
 func cors(next http.Handler) http.Handler {
@@ -103,6 +104,34 @@ func (s *Server) auth(next func(http.ResponseWriter, *http.Request, User)) http.
 		}
 		next(w, r, u)
 	}
+}
+
+func (s *Server) adminFromRequest(r *http.Request) (AdminUser, bool) {
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	admin, err := s.store.AdminByToken(token)
+	return admin, err == nil
+}
+
+func (s *Server) recordAdminOperation(r *http.Request, action, target, detail string) {
+	admin, ok := s.adminFromRequest(r)
+	if !ok {
+		return
+	}
+	_ = s.store.RecordAdminOperation(AdminOperationLog{AdminID: admin.ID, AdminEmail: admin.Email, Action: action, Target: target, Detail: detail, IP: clientIP(r), CreatedAt: time.Now()})
+}
+
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		return strings.TrimSpace(strings.Split(xff, ",")[0])
+	}
+	if xr := r.Header.Get("X-Real-IP"); xr != "" {
+		return xr
+	}
+	return r.RemoteAddr
+}
+
+func (s *Server) adminOperationLogs(w http.ResponseWriter, r *http.Request) {
+	ok(w, s.store.AdminOperationLogs(100))
 }
 
 func (s *Server) adminLogin(w http.ResponseWriter, r *http.Request) {
@@ -286,6 +315,7 @@ func (s *Server) adminPlans(w http.ResponseWriter, r *http.Request) {
 			handleErr(w, err)
 			return
 		}
+		s.recordAdminOperation(r, "plan.create", fmt.Sprintf("plan:%d", plan.ID), plan.Name)
 		ok(w, plan)
 	default:
 		w.WriteHeader(405)
@@ -310,6 +340,7 @@ func (s *Server) adminRedeemCodes(w http.ResponseWriter, r *http.Request) {
 			handleErr(w, err)
 			return
 		}
+		s.recordAdminOperation(r, "redeem_codes.create", fmt.Sprintf("plan:%d", in.PlanID), fmt.Sprintf("count=%d prefix=%s", in.Count, in.Prefix))
 		ok(w, codes)
 	default:
 		w.WriteHeader(405)
@@ -383,6 +414,7 @@ func (s *Server) adminFRPSRestart(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "FRPS_RESTART_FAILED", err.Error()+"\n"+res.Output)
 		return
 	}
+	s.recordAdminOperation(r, "frps.restart", "frps", res.Output)
 	ok(w, res)
 }
 
@@ -396,6 +428,7 @@ func (s *Server) adminFRPSReload(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "FRPS_RELOAD_FAILED", err.Error()+"\n"+res.Output)
 		return
 	}
+	s.recordAdminOperation(r, "frps.reload", "frps", res.Output)
 	ok(w, res)
 }
 
@@ -436,6 +469,7 @@ func (s *Server) adminRequestCertificate(w http.ResponseWriter, r *http.Request)
 		fail(w, 500, "CERTIFICATE_REQUEST_FAILED", err.Error()+"\n"+res.Output)
 		return
 	}
+	s.recordAdminOperation(r, "certificate.request", record.Domain, record.Status)
 	ok(w, map[string]any{"result": res, "record": record})
 }
 
@@ -445,6 +479,7 @@ func (s *Server) adminTestNginx(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "NGINX_TEST_FAILED", err.Error()+"\n"+out)
 		return
 	}
+	s.recordAdminOperation(r, "nginx.test", "nginx", out)
 	ok(w, map[string]any{"output": out})
 }
 
@@ -454,6 +489,7 @@ func (s *Server) adminReloadNginx(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "NGINX_RELOAD_FAILED", err.Error()+"\n"+out)
 		return
 	}
+	s.recordAdminOperation(r, "nginx.reload", "nginx", out)
 	ok(w, map[string]any{"output": out})
 }
 
@@ -472,6 +508,7 @@ func (s *Server) adminTestMail(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "MAIL_SEND_FAILED", err.Error())
 		return
 	}
+	s.recordAdminOperation(r, "mail.test", in.Email, "sent")
 	ok(w, map[string]any{"sent": true})
 }
 
@@ -481,7 +518,9 @@ func (s *Server) adminSettings(w http.ResponseWriter, r *http.Request) {
 		if !decode(w, r, &in) {
 			return
 		}
-		ok(w, s.store.UpdateSettings(in))
+		updated := s.store.UpdateSettings(in)
+		s.recordAdminOperation(r, "settings.update", "system_settings", "updated")
+		ok(w, updated)
 		return
 	}
 	ok(w, s.store.Settings())

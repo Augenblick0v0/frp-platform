@@ -24,4 +24,6 @@ type Backend interface {
 	TotalTrafficToday() int64
 	SaveCertificate(record CertificateRecord) (CertificateRecord, error)
 	Certificates() []CertificateRecord
+	RecordAdminOperation(log AdminOperationLog) error
+	AdminOperationLogs(limit int) []AdminOperationLog
 }

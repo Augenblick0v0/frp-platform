@@ -17,6 +17,18 @@ CREATE TABLE IF NOT EXISTS admin_sessions (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS admin_operation_logs (
+    id BIGSERIAL PRIMARY KEY,
+    admin_id BIGINT,
+    admin_email VARCHAR(255),
+    action VARCHAR(128) NOT NULL,
+    target TEXT,
+    detail TEXT,
+    ip VARCHAR(64),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_admin_operation_logs_created ON admin_operation_logs(created_at DESC);
+
 CREATE TABLE IF NOT EXISTS users (
     id BIGSERIAL PRIMARY KEY,
     email VARCHAR(255) NOT NULL UNIQUE,

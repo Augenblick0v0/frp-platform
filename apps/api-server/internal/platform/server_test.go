@@ -117,3 +117,21 @@ func TestCertificateRequestPersistsDryRunRecord(t *testing.T) {
 		t.Fatalf("unexpected certs %#v", certs)
 	}
 }
+
+func TestAdminOperationLogRecordsRedeemCodeCreation(t *testing.T) {
+	s := NewServer(NewStore())
+	login := post(t, s, "/api/admin/login", map[string]any{"email": "admin@example.com", "password": "admin123456"}, "")
+	token := login["access_token"].(string)
+	rrCreate := request(t, s, "POST", "/api/admin/redeem-codes", map[string]any{"plan_id": 1, "count": 1, "prefix": "OPS"}, token)
+	if rrCreate.Code != 200 {
+		t.Fatalf("create code status=%d body=%s", rrCreate.Code, rrCreate.Body.String())
+	}
+	rr := request(t, s, "GET", "/api/admin/operation-logs", nil, token)
+	if rr.Code != 200 {
+		t.Fatalf("logs status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	logs := s.store.AdminOperationLogs(10)
+	if len(logs) == 0 || logs[0].Action != "redeem_codes.create" {
+		t.Fatalf("unexpected logs %#v", logs)
+	}
+}

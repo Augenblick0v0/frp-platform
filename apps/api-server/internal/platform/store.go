@@ -14,36 +14,38 @@ var ErrForbidden = errors.New("forbidden")
 var ErrConflict = errors.New("conflict")
 
 type Store struct {
-	mu            sync.Mutex
-	users         map[int64]User
-	usersByEmail  map[string]int64
-	admins        map[int64]AdminUser
-	adminsByEmail map[string]int64
-	sessions      map[string]int64
-	adminSessions map[string]int64
-	emailCodes    map[string]string
-	plans         map[int64]Plan
-	redeemCodes   map[string]RedeemCode
-	subscriptions map[int64]Subscription
-	tunnels       map[int64]Tunnel
-	domains       map[string]int64
-	usedTCP       map[int]bool
-	usedUDP       map[int]bool
-	nextUserID    int64
-	nextAdminID   int64
-	nextPlanID    int64
-	nextTunnelID  int64
-	settings      Settings
-	todayTraffic  int64
-	certificates  map[string]CertificateRecord
-	nextCertID    int64
+	mu              sync.Mutex
+	users           map[int64]User
+	usersByEmail    map[string]int64
+	admins          map[int64]AdminUser
+	adminsByEmail   map[string]int64
+	sessions        map[string]int64
+	adminSessions   map[string]int64
+	emailCodes      map[string]string
+	plans           map[int64]Plan
+	redeemCodes     map[string]RedeemCode
+	subscriptions   map[int64]Subscription
+	tunnels         map[int64]Tunnel
+	domains         map[string]int64
+	usedTCP         map[int]bool
+	usedUDP         map[int]bool
+	nextUserID      int64
+	nextAdminID     int64
+	nextPlanID      int64
+	nextTunnelID    int64
+	settings        Settings
+	todayTraffic    int64
+	certificates    map[string]CertificateRecord
+	nextCertID      int64
+	operationLogs   []AdminOperationLog
+	nextOperationID int64
 }
 
 func NewStore() *Store {
 	s := &Store{
 		users: map[int64]User{}, usersByEmail: map[string]int64{}, admins: map[int64]AdminUser{}, adminsByEmail: map[string]int64{}, sessions: map[string]int64{}, adminSessions: map[string]int64{}, emailCodes: map[string]string{},
 		plans: map[int64]Plan{}, redeemCodes: map[string]RedeemCode{}, subscriptions: map[int64]Subscription{}, tunnels: map[int64]Tunnel{}, domains: map[string]int64{}, certificates: map[string]CertificateRecord{},
-		usedTCP: map[int]bool{}, usedUDP: map[int]bool{}, nextUserID: 1, nextAdminID: 1, nextPlanID: 1, nextTunnelID: 1, nextCertID: 1,
+		usedTCP: map[int]bool{}, usedUDP: map[int]bool{}, nextUserID: 1, nextAdminID: 1, nextPlanID: 1, nextTunnelID: 1, nextCertID: 1, nextOperationID: 1,
 		settings: Settings{PlatformDomain: "example.com", FRPEntryDomain: "frp.example.com", ServerAddr: "frp.example.com", FRPServerPort: 7000, TCPPortStart: 20000, TCPPortEnd: 29999, UDPPortStart: 30000, UDPPortEnd: 39999, PurchaseURL: "https://example.com/buy"},
 	}
 	plan := Plan{ID: s.nextPlanID, Name: "高级套餐", Description: "支持 TCP/UDP/HTTP/HTTPS、自定义域名和自动证书", DurationDays: 30, TrafficLimitBytes: 100 * 1024 * 1024 * 1024, BandwidthKbps: 10240, MaxTunnels: 20, MaxTCPTunnels: 10, MaxUDPTunnels: 10, MaxHTTPTunnels: 10, MaxHTTPSTunnels: 10, AllowTCP: true, AllowUDP: true, AllowHTTP: true, AllowHTTPS: true, AllowCustomDomain: true, MaxDomains: 10, AllowAutoCert: true, Status: "active"}
@@ -479,5 +481,34 @@ func (s *Store) Certificates() []CertificateRecord {
 	for _, cert := range s.certificates {
 		out = append(out, cert)
 	}
+	return out
+}
+
+func (s *Store) RecordAdminOperation(logEntry AdminOperationLog) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	logEntry.ID = s.nextOperationID
+	s.nextOperationID++
+	if logEntry.CreatedAt.IsZero() {
+		logEntry.CreatedAt = time.Now()
+	}
+	s.operationLogs = append([]AdminOperationLog{logEntry}, s.operationLogs...)
+	if len(s.operationLogs) > 1000 {
+		s.operationLogs = s.operationLogs[:1000]
+	}
+	return nil
+}
+
+func (s *Store) AdminOperationLogs(limit int) []AdminOperationLog {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	if limit > len(s.operationLogs) {
+		limit = len(s.operationLogs)
+	}
+	out := make([]AdminOperationLog, limit)
+	copy(out, s.operationLogs[:limit])
 	return out
 }
