@@ -1,0 +1,12 @@
+.env
+*.log
+.DS_Store
+node_modules/
+dist/
+build/
+coverage/
+postgres/data/
+redis/data/
+mail/data/
+mail/state/
+certbot/letsencrypt/

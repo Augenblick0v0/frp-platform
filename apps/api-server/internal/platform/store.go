@@ -1,0 +1,253 @@
+package platform
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+)
+
+var ErrNotFound = errors.New("not found")
+var ErrUnauthorized = errors.New("unauthorized")
+var ErrForbidden = errors.New("forbidden")
+var ErrConflict = errors.New("conflict")
+
+type Store struct {
+	mu            sync.Mutex
+	users         map[int64]User
+	usersByEmail  map[string]int64
+	sessions      map[string]int64
+	emailCodes    map[string]string
+	plans         map[int64]Plan
+	redeemCodes   map[string]RedeemCode
+	subscriptions map[int64]Subscription
+	tunnels       map[int64]Tunnel
+	domains       map[string]int64
+	usedTCP       map[int]bool
+	usedUDP       map[int]bool
+	nextUserID    int64
+	nextPlanID    int64
+	nextTunnelID  int64
+	settings      Settings
+}
+
+func NewStore() *Store {
+	s := &Store{
+		users: map[int64]User{}, usersByEmail: map[string]int64{}, sessions: map[string]int64{}, emailCodes: map[string]string{},
+		plans: map[int64]Plan{}, redeemCodes: map[string]RedeemCode{}, subscriptions: map[int64]Subscription{}, tunnels: map[int64]Tunnel{}, domains: map[string]int64{},
+		usedTCP: map[int]bool{}, usedUDP: map[int]bool{}, nextUserID: 1, nextPlanID: 1, nextTunnelID: 1,
+		settings: Settings{PlatformDomain: "example.com", FRPEntryDomain: "frp.example.com", ServerAddr: "frp.example.com", FRPServerPort: 7000, TCPPortStart: 20000, TCPPortEnd: 29999, UDPPortStart: 30000, UDPPortEnd: 39999, PurchaseURL: "https://example.com/buy"},
+	}
+	plan := Plan{ID: s.nextPlanID, Name: "高级套餐", Description: "支持 TCP/UDP/HTTP/HTTPS、自定义域名和自动证书", DurationDays: 30, TrafficLimitBytes: 100 * 1024 * 1024 * 1024, BandwidthKbps: 10240, MaxTunnels: 20, MaxTCPTunnels: 10, MaxUDPTunnels: 10, MaxHTTPTunnels: 10, MaxHTTPSTunnels: 10, AllowTCP: true, AllowUDP: true, AllowHTTP: true, AllowHTTPS: true, AllowCustomDomain: true, MaxDomains: 10, AllowAutoCert: true, Status: "active"}
+	s.plans[plan.ID] = plan
+	s.nextPlanID++
+	s.redeemCodes["DEMO-PLAN-2026"] = RedeemCode{Code: "DEMO-PLAN-2026", PlanID: plan.ID, Status: "unused"}
+	return s
+}
+
+func (s *Store) SendEmailCode(email, purpose string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	code := "123456"
+	s.emailCodes[strings.ToLower(email)+":"+purpose] = code
+	return code
+}
+
+func (s *Store) Register(email, code, password string) (User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" || password == "" {
+		return User{}, fmt.Errorf("email and password required")
+	}
+	if s.emailCodes[email+":register"] != code {
+		return User{}, fmt.Errorf("invalid verification code")
+	}
+	if _, ok := s.usersByEmail[email]; ok {
+		return User{}, ErrConflict
+	}
+	u := User{ID: s.nextUserID, Email: email, Password: password, Status: "active", CreatedAt: time.Now()}
+	s.nextUserID++
+	s.users[u.ID] = u
+	s.usersByEmail[email] = u.ID
+	return u, nil
+}
+
+func (s *Store) Login(email, password string) (string, User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id, ok := s.usersByEmail[strings.ToLower(strings.TrimSpace(email))]
+	if !ok {
+		return "", User{}, ErrUnauthorized
+	}
+	u := s.users[id]
+	if u.Password != password || u.Status != "active" {
+		return "", User{}, ErrUnauthorized
+	}
+	token := fmt.Sprintf("token-%d-%d", u.ID, time.Now().UnixNano())
+	s.sessions[token] = u.ID
+	return token, u, nil
+}
+
+func (s *Store) UserByToken(token string) (User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id, ok := s.sessions[token]
+	if !ok {
+		return User{}, ErrUnauthorized
+	}
+	return s.users[id], nil
+}
+
+func (s *Store) Plans() []Plan {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []Plan{}
+	for _, p := range s.plans {
+		out = append(out, p)
+	}
+	return out
+}
+
+func (s *Store) Redeem(userID int64, code string) (Subscription, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rc, ok := s.redeemCodes[strings.TrimSpace(code)]
+	if !ok {
+		return Subscription{}, ErrNotFound
+	}
+	if rc.Status != "unused" {
+		return Subscription{}, ErrForbidden
+	}
+	p, ok := s.plans[rc.PlanID]
+	if !ok || p.Status != "active" {
+		return Subscription{}, ErrNotFound
+	}
+	now := time.Now()
+	rc.Status = "redeemed"
+	rc.RedeemedBy = userID
+	rc.RedeemedAt = &now
+	s.redeemCodes[rc.Code] = rc
+	sub := Subscription{UserID: userID, PlanID: p.ID, PlanName: p.Name, ExpiresAt: now.AddDate(0, 0, p.DurationDays), TrafficLimitBytes: p.TrafficLimitBytes, BandwidthKbps: p.BandwidthKbps, AllowTCP: p.AllowTCP, AllowUDP: p.AllowUDP, AllowHTTP: p.AllowHTTP, AllowHTTPS: p.AllowHTTPS, AllowCustomDomain: p.AllowCustomDomain, AllowAutoCert: p.AllowAutoCert, MaxTunnels: p.MaxTunnels, MaxDomains: p.MaxDomains, Status: "active"}
+	s.subscriptions[userID] = sub
+	return sub, nil
+}
+
+func (s *Store) Subscription(userID int64) (Subscription, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sub, ok := s.subscriptions[userID]
+	if !ok {
+		return Subscription{}, ErrNotFound
+	}
+	if time.Now().After(sub.ExpiresAt) {
+		sub.Status = "expired"
+	}
+	return sub, nil
+}
+
+func (s *Store) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sub, ok := s.subscriptions[userID]
+	if !ok || sub.Status != "active" || time.Now().After(sub.ExpiresAt) {
+		return Tunnel{}, ErrForbidden
+	}
+	typ := strings.ToLower(req.Type)
+	if req.Name == "" || req.LocalHost == "" || req.LocalPort <= 0 {
+		return Tunnel{}, fmt.Errorf("invalid tunnel request")
+	}
+	t := Tunnel{ID: s.nextTunnelID, UserID: userID, Name: req.Name, Type: typ, LocalHost: req.LocalHost, LocalPort: req.LocalPort, UseHTTPS: req.UseHTTPS, CreatedAt: time.Now()}
+	s.nextTunnelID++
+	switch typ {
+	case "tcp":
+		if !sub.AllowTCP {
+			return Tunnel{}, ErrForbidden
+		}
+		port, err := allocate(s.usedTCP, s.settings.TCPPortStart, s.settings.TCPPortEnd)
+		if err != nil {
+			return Tunnel{}, err
+		}
+		t.RemotePort = port
+		t.Status = "active"
+		t.PublicURL = fmt.Sprintf("%s:%d", s.settings.ServerAddr, port)
+	case "udp":
+		if !sub.AllowUDP {
+			return Tunnel{}, ErrForbidden
+		}
+		port, err := allocate(s.usedUDP, s.settings.UDPPortStart, s.settings.UDPPortEnd)
+		if err != nil {
+			return Tunnel{}, err
+		}
+		t.RemotePort = port
+		t.Status = "active"
+		t.PublicURL = fmt.Sprintf("%s:%d", s.settings.ServerAddr, port)
+	case "http", "https":
+		if typ == "http" && !sub.AllowHTTP {
+			return Tunnel{}, ErrForbidden
+		}
+		if typ == "https" && (!sub.AllowHTTPS || !sub.AllowAutoCert) {
+			return Tunnel{}, ErrForbidden
+		}
+		domain := strings.ToLower(strings.TrimSpace(req.Domain))
+		if domain == "" {
+			return Tunnel{}, fmt.Errorf("domain required")
+		}
+		if _, exists := s.domains[domain]; exists {
+			return Tunnel{}, ErrConflict
+		}
+		s.domains[domain] = t.ID
+		t.Domain = domain
+		if typ == "https" {
+			t.UseHTTPS = true
+			t.Status = "pending_certificate"
+			t.PublicURL = "https://" + domain
+		} else {
+			t.Status = "pending_domain_check"
+			t.PublicURL = "http://" + domain
+		}
+	default:
+		return Tunnel{}, fmt.Errorf("unsupported tunnel type")
+	}
+	s.tunnels[t.ID] = t
+	return t, nil
+}
+
+func allocate(used map[int]bool, start, end int) (int, error) {
+	for p := start; p <= end; p++ {
+		if !used[p] {
+			used[p] = true
+			return p, nil
+		}
+	}
+	return 0, fmt.Errorf("no free port")
+}
+
+func (s *Store) Tunnels(userID int64) []Tunnel {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []Tunnel{}
+	for _, t := range s.tunnels {
+		if t.UserID == userID {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+func (s *Store) AllTunnels() []Tunnel {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []Tunnel{}
+	for _, t := range s.tunnels {
+		out = append(out, t)
+	}
+	return out
+}
+func (s *Store) Settings() Settings { s.mu.Lock(); defer s.mu.Unlock(); return s.settings }
+func (s *Store) UpdateSettings(in Settings) Settings {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.settings = in
+	return s.settings
+}
