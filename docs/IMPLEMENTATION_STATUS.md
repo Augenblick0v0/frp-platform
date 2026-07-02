@@ -27,6 +27,9 @@
 - 流量统计 API：客户端上报、用户查询、后台今日总流量。
 - PostgreSQL traffic_logs 表和 subscription traffic_used_bytes 更新。
 - 用户面板/客户端 WebUI 流量展示与上报入口。
+- Windows 客户端打包脚本、PowerShell 构建脚本和 NSIS 安装器模板。
+- Linux 客户端 tar.gz 打包脚本、systemd service 和 install.sh。
+- 客户端构建支持携带官方 frpc 二进制，未提供时生成提示文件。
 - Docker Compose、Nginx、frps 部署模板。
 - Go 客户端骨架。
 
@@ -35,4 +38,3 @@
 - Redis 验证码和任务队列。
 - 服务端 frps 管理、证书状态持久化和自动续期调度。
 - Let's Encrypt 自动证书申请。
-- Windows 安装包构建。

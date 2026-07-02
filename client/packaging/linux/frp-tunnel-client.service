@@ -1,0 +1,15 @@
+[Unit]
+Description=FRP Tunnel Client
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/frp-client
+ExecStart=/opt/frp-client/frp-client -addr 127.0.0.1:18080 -web /opt/frp-client/webui -workdir /var/lib/frp-client -frpc /opt/frp-client/frpc
+Restart=always
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target

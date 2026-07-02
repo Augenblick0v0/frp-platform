@@ -10,3 +10,4 @@ redis/data/
 mail/data/
 mail/state/
 certbot/letsencrypt/
+dist/
