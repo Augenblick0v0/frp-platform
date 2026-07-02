@@ -35,6 +35,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/client/tunnels", s.auth(s.clientTunnels))
 	s.mux.HandleFunc("/api/admin/dashboard", s.adminDashboard)
 	s.mux.HandleFunc("/api/admin/plans", s.adminPlans)
+	s.mux.HandleFunc("/api/admin/users", s.adminUsers)
+	s.mux.HandleFunc("/api/admin/redeem-codes", s.adminRedeemCodes)
 	s.mux.HandleFunc("/api/admin/tunnels", s.adminTunnels)
 	s.mux.HandleFunc("/api/admin/settings", s.adminSettings)
 }
@@ -168,7 +170,49 @@ func (s *Server) adminDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	ok(w, map[string]any{"total_tunnels": len(all), "tunnel_counts": counts, "online_clients": 0, "today_traffic_bytes": 0})
 }
-func (s *Server) adminPlans(w http.ResponseWriter, r *http.Request)   { ok(w, s.store.Plans()) }
+func (s *Server) adminPlans(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		ok(w, s.store.Plans())
+	case http.MethodPost:
+		var in Plan
+		if !decode(w, r, &in) {
+			return
+		}
+		plan, err := s.store.CreatePlan(in)
+		if err != nil {
+			handleErr(w, err)
+			return
+		}
+		ok(w, plan)
+	default:
+		w.WriteHeader(405)
+	}
+}
+func (s *Server) adminUsers(w http.ResponseWriter, r *http.Request) { ok(w, s.store.Users()) }
+func (s *Server) adminRedeemCodes(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		ok(w, s.store.RedeemCodes())
+	case http.MethodPost:
+		var in struct {
+			PlanID int64  `json:"plan_id"`
+			Count  int    `json:"count"`
+			Prefix string `json:"prefix"`
+		}
+		if !decode(w, r, &in) {
+			return
+		}
+		codes, err := s.store.CreateRedeemCodes(in.PlanID, in.Count, in.Prefix)
+		if err != nil {
+			handleErr(w, err)
+			return
+		}
+		ok(w, codes)
+	default:
+		w.WriteHeader(405)
+	}
+}
 func (s *Server) adminTunnels(w http.ResponseWriter, r *http.Request) { ok(w, s.store.AllTunnels()) }
 func (s *Server) adminSettings(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPut {

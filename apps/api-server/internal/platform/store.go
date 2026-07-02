@@ -251,3 +251,57 @@ func (s *Store) UpdateSettings(in Settings) Settings {
 	s.settings = in
 	return s.settings
 }
+
+func (s *Store) CreatePlan(plan Plan) (Plan, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	plan.ID = s.nextPlanID
+	s.nextPlanID++
+	if plan.Status == "" {
+		plan.Status = "active"
+	}
+	s.plans[plan.ID] = plan
+	return plan, nil
+}
+
+func (s *Store) Users() []User {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []User{}
+	for _, u := range s.users {
+		out = append(out, u)
+	}
+	return out
+}
+
+func (s *Store) RedeemCodes() []RedeemCode {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []RedeemCode{}
+	for _, rc := range s.redeemCodes {
+		out = append(out, rc)
+	}
+	return out
+}
+
+func (s *Store) CreateRedeemCodes(planID int64, count int, prefix string) ([]RedeemCode, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.plans[planID]; !ok {
+		return nil, ErrNotFound
+	}
+	if count <= 0 || count > 500 {
+		return nil, fmt.Errorf("count must be 1-500")
+	}
+	if prefix == "" {
+		prefix = "CODE"
+	}
+	out := make([]RedeemCode, 0, count)
+	for i := 0; i < count; i++ {
+		code := fmt.Sprintf("%s-%d-%d", strings.ToUpper(prefix), time.Now().UnixNano(), i+1)
+		rc := RedeemCode{Code: code, PlanID: planID, Status: "unused"}
+		s.redeemCodes[code] = rc
+		out = append(out, rc)
+	}
+	return out, nil
+}

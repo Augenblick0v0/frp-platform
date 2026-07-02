@@ -325,3 +325,82 @@ func isUnique(err error) bool {
 }
 
 var _ = errors.Is
+
+func (s *SQLStore) CreatePlan(plan Plan) (Plan, error) {
+	if plan.Status == "" {
+		plan.Status = "active"
+	}
+	err := s.db.QueryRow(`INSERT INTO plans (name,description,duration_days,traffic_limit_bytes,bandwidth_limit_kbps,max_tunnels,max_tcp_tunnels,max_udp_tunnels,max_http_tunnels,max_https_tunnels,allow_tcp,allow_udp,allow_http,allow_https,allow_custom_domain,max_domains,allow_auto_cert,status)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+RETURNING id`, plan.Name, plan.Description, plan.DurationDays, plan.TrafficLimitBytes, plan.BandwidthKbps, plan.MaxTunnels, plan.MaxTCPTunnels, plan.MaxUDPTunnels, plan.MaxHTTPTunnels, plan.MaxHTTPSTunnels, plan.AllowTCP, plan.AllowUDP, plan.AllowHTTP, plan.AllowHTTPS, plan.AllowCustomDomain, plan.MaxDomains, plan.AllowAutoCert, plan.Status).Scan(&plan.ID)
+	return plan, err
+}
+
+func (s *SQLStore) Users() []User {
+	rows, err := s.db.Query(`SELECT id,email,password_hash,status,created_at FROM users ORDER BY id DESC LIMIT 500`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []User
+	for rows.Next() {
+		var u User
+		_ = rows.Scan(&u.ID, &u.Email, &u.Password, &u.Status, &u.CreatedAt)
+		out = append(out, u)
+	}
+	return out
+}
+
+func (s *SQLStore) RedeemCodes() []RedeemCode {
+	rows, err := s.db.Query(`SELECT code,plan_id,status,expires_at,coalesce(redeemed_by_user_id,0),redeemed_at FROM redeem_codes ORDER BY created_at DESC LIMIT 500`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []RedeemCode
+	for rows.Next() {
+		var rc RedeemCode
+		var expires sql.NullTime
+		var redeemed sql.NullTime
+		_ = rows.Scan(&rc.Code, &rc.PlanID, &rc.Status, &expires, &rc.RedeemedBy, &redeemed)
+		if expires.Valid {
+			rc.ExpiresAt = &expires.Time
+		}
+		if redeemed.Valid {
+			rc.RedeemedAt = &redeemed.Time
+		}
+		out = append(out, rc)
+	}
+	return out
+}
+
+func (s *SQLStore) CreateRedeemCodes(planID int64, count int, prefix string) ([]RedeemCode, error) {
+	if count <= 0 || count > 500 {
+		return nil, fmt.Errorf("count must be 1-500")
+	}
+	if prefix == "" {
+		prefix = "CODE"
+	}
+	var exists bool
+	if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM plans WHERE id=$1)`, planID).Scan(&exists); err != nil || !exists {
+		return nil, ErrNotFound
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	out := make([]RedeemCode, 0, count)
+	for i := 0; i < count; i++ {
+		code := fmt.Sprintf("%s-%d-%d", strings.ToUpper(prefix), time.Now().UnixNano(), i+1)
+		_, err := tx.Exec(`INSERT INTO redeem_codes (code,plan_id,status) VALUES ($1,$2,'unused')`, code, planID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, RedeemCode{Code: code, PlanID: planID, Status: "unused"})
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
