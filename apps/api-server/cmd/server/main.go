@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -28,7 +29,9 @@ func main() {
 		log.Printf("storage backend: in-memory")
 	}
 
-	srv := platform.NewServerWithMailer(backend, platform.MailerFromEnv())
+	automation := platform.AutomationFromEnv()
+	platform.StartCertificateRenewalScheduler(context.Background(), backend, automation)
+	srv := platform.NewServerWithServices(backend, platform.MailerFromEnv(), automation, platform.FRPSManagerFromEnv())
 	log.Printf("frp-platform api-server listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, srv.Handler()))
 }

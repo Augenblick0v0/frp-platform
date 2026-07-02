@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestUserRedeemAndCreateTCPTunnel(t *testing.T) {
@@ -132,6 +133,30 @@ func TestAdminOperationLogRecordsRedeemCodeCreation(t *testing.T) {
 	}
 	logs := s.store.AdminOperationLogs(10)
 	if len(logs) == 0 || logs[0].Action != "redeem_codes.create" {
+		t.Fatalf("unexpected logs %#v", logs)
+	}
+}
+
+func TestAdminRenewDueCertificates(t *testing.T) {
+	store := NewStore()
+	expires := time.Now().AddDate(0, 0, 1)
+	_, err := store.SaveCertificate(CertificateRecord{Domain: "due.example.com", Status: "issued", ExpiresAt: &expires})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewServerWithServices(store, LogMailer{}, &Automation{WebrootDir: "/tmp/acme", LetsEncryptDir: "/tmp/letsencrypt", CertbotBin: "certbot", DryRun: true}, nil)
+	login := post(t, s, "/api/admin/login", map[string]any{"email": "admin@example.com", "password": "admin123456"}, "")
+	token := login["access_token"].(string)
+	rr := request(t, s, "POST", "/api/admin/certificates/renew-due", map[string]any{"force": false}, token)
+	if rr.Code != 200 {
+		t.Fatalf("renew status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	certs := store.Certificates()
+	if len(certs) != 1 || certs[0].Status != "dry_run" {
+		t.Fatalf("unexpected certs %#v", certs)
+	}
+	logs := store.AdminOperationLogs(10)
+	if len(logs) == 0 || logs[0].Action != "certificate.renew_due" {
 		t.Fatalf("unexpected logs %#v", logs)
 	}
 }

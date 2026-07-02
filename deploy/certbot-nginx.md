@@ -36,3 +36,31 @@ LETSENCRYPT_EMAIL=admin@example.com
 ```
 
 `NGINX_TEST_CMD` 和 `NGINX_RELOAD_CMD` 默认留空，表示只生成配置，不执行 reload。生产环境可以按部署方式配置，例如把 Docker socket 安全挂载给一个受限 reload sidecar 后执行 reload。
+
+## 自动续期
+
+API Server 启动后会根据环境变量自动扫描即将过期的证书：
+
+```env
+CERT_RENEW_BEFORE_DAYS=30
+CERT_RENEW_INTERVAL=24h
+```
+
+含义：
+
+- `CERT_RENEW_BEFORE_DAYS=30`：证书距离过期小于等于 30 天时续期。
+- `CERT_RENEW_INTERVAL=24h`：每 24 小时检查一次。设置为 `0` 或空值可关闭后台调度。
+
+也可以在后台手动触发：
+
+```text
+POST /api/admin/certificates/renew-due
+```
+
+请求体：
+
+```json
+{ "force": false }
+```
+
+`force=true` 会忽略过期时间，强制对所有证书执行续期流程。

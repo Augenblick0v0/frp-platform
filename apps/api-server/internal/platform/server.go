@@ -68,6 +68,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/admin/nginx/reload", s.adminAuth(s.adminReloadNginx))
 	s.mux.HandleFunc("/api/admin/certificates", s.adminAuth(s.adminCertificates))
 	s.mux.HandleFunc("/api/admin/certificates/request", s.adminAuth(s.adminRequestCertificate))
+	s.mux.HandleFunc("/api/admin/certificates/renew-due", s.adminAuth(s.adminRenewDueCertificates))
 	s.mux.HandleFunc("/api/admin/frps/status", s.adminAuth(s.adminFRPSStatus))
 	s.mux.HandleFunc("/api/admin/frps/config", s.adminAuth(s.adminFRPSConfig))
 	s.mux.HandleFunc("/api/admin/frps/logs", s.adminAuth(s.adminFRPSLogs))
@@ -434,6 +435,25 @@ func (s *Server) adminFRPSReload(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) adminCertificates(w http.ResponseWriter, r *http.Request) {
 	ok(w, s.store.Certificates())
+}
+
+func (s *Server) adminRenewDueCertificates(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(405)
+		return
+	}
+	var in struct {
+		Force bool `json:"force"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&in)
+	renewer := NewCertificateRenewer(s.store, s.automation)
+	res, err := renewer.RenewDue(r.Context(), in.Force)
+	if err != nil {
+		fail(w, 500, "CERTIFICATE_RENEWAL_FAILED", err.Error())
+		return
+	}
+	s.recordAdminOperation(r, "certificate.renew_due", "certificates", res.String())
+	ok(w, res)
 }
 
 func (s *Server) adminRequestCertificate(w http.ResponseWriter, r *http.Request) {
