@@ -1,6 +1,7 @@
 package clientcore
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -41,6 +42,7 @@ func (s *LocalServer) Handler() http.Handler {
 		}
 		writeJSON(w, s.manager.Status())
 	})
+	mux.HandleFunc("/api/traffic/report", s.reportTraffic)
 	mux.HandleFunc("/api/frpc/stop", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(405)
@@ -54,6 +56,45 @@ func (s *LocalServer) Handler() http.Handler {
 	})
 	mux.Handle("/", http.FileServer(http.Dir(s.webDir)))
 	return mux
+}
+
+func (s *LocalServer) reportTraffic(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(405)
+		return
+	}
+	var in struct {
+		APIBase string          `json:"api_base"`
+		Token   string          `json:"token"`
+		Reports []TrafficReport `json:"reports"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, 400, err)
+		return
+	}
+	body, _ := json.Marshal(map[string]any{"reports": in.Reports})
+	req, err := http.NewRequest(http.MethodPost, trimSlash(in.APIBase)+"/api/client/traffic", bytes.NewReader(body))
+	if err != nil {
+		writeError(w, 400, err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+in.Token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		writeError(w, 400, err)
+		return
+	}
+	defer resp.Body.Close()
+	var out any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	if resp.StatusCode > 299 {
+		w.WriteHeader(resp.StatusCode)
+	}
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 func (s *LocalServer) renderConfig(w http.ResponseWriter, r *http.Request) {

@@ -44,9 +44,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/user/subscription", s.auth(s.subscription))
 	s.mux.HandleFunc("/api/user/redeem", s.auth(s.redeem))
 	s.mux.HandleFunc("/api/user/purchase-info", s.auth(s.purchaseInfo))
+	s.mux.HandleFunc("/api/user/traffic", s.auth(s.userTraffic))
 	s.mux.HandleFunc("/api/tunnels", s.auth(s.tunnels))
 	s.mux.HandleFunc("/api/client/heartbeat", s.auth(s.clientHeartbeat))
 	s.mux.HandleFunc("/api/client/tunnels", s.auth(s.clientTunnels))
+	s.mux.HandleFunc("/api/client/traffic", s.auth(s.clientTraffic))
 	s.mux.HandleFunc("/api/admin/dashboard", s.adminDashboard)
 	s.mux.HandleFunc("/api/admin/plans", s.adminPlans)
 	s.mux.HandleFunc("/api/admin/users", s.adminUsers)
@@ -160,6 +162,14 @@ func (s *Server) purchaseInfo(w http.ResponseWriter, r *http.Request, u User) {
 	st := s.store.Settings()
 	ok(w, map[string]any{"title": "购买套餐", "description": "请通过购买链接获取兑换码", "button_text": "立即购买", "purchase_url": st.PurchaseURL})
 }
+func (s *Server) userTraffic(w http.ResponseWriter, r *http.Request, u User) {
+	summary, err := s.store.TrafficSummary(u.ID)
+	if err != nil {
+		handleErr(w, err)
+		return
+	}
+	ok(w, summary)
+}
 func (s *Server) tunnels(w http.ResponseWriter, r *http.Request, u User) {
 	switch r.Method {
 	case http.MethodGet:
@@ -182,6 +192,24 @@ func (s *Server) tunnels(w http.ResponseWriter, r *http.Request, u User) {
 func (s *Server) clientHeartbeat(w http.ResponseWriter, r *http.Request, u User) {
 	ok(w, map[string]any{"status": "online", "server_time": time.Now().Format(time.RFC3339)})
 }
+func (s *Server) clientTraffic(w http.ResponseWriter, r *http.Request, u User) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(405)
+		return
+	}
+	var in struct {
+		Reports []TrafficReport `json:"reports"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	summary, err := s.store.ReportTraffic(u.ID, in.Reports)
+	if err != nil {
+		handleErr(w, err)
+		return
+	}
+	ok(w, summary)
+}
 func (s *Server) clientTunnels(w http.ResponseWriter, r *http.Request, u User) {
 	st := s.store.Settings()
 	ok(w, map[string]any{"server_addr": st.ServerAddr, "server_port": st.FRPServerPort, "token": "runtime-token-placeholder", "tunnels": s.store.Tunnels(u.ID)})
@@ -192,7 +220,7 @@ func (s *Server) adminDashboard(w http.ResponseWriter, r *http.Request) {
 	for _, t := range all {
 		counts[t.Type]++
 	}
-	ok(w, map[string]any{"total_tunnels": len(all), "tunnel_counts": counts, "online_clients": 0, "today_traffic_bytes": 0})
+	ok(w, map[string]any{"total_tunnels": len(all), "tunnel_counts": counts, "online_clients": 0, "today_traffic_bytes": s.store.TotalTrafficToday()})
 }
 func (s *Server) adminPlans(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {

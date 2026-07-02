@@ -30,6 +30,7 @@ type Store struct {
 	nextPlanID    int64
 	nextTunnelID  int64
 	settings      Settings
+	todayTraffic  int64
 }
 
 func NewStore() *Store {
@@ -129,7 +130,7 @@ func (s *Store) Redeem(userID int64, code string) (Subscription, error) {
 	rc.RedeemedBy = userID
 	rc.RedeemedAt = &now
 	s.redeemCodes[rc.Code] = rc
-	sub := Subscription{UserID: userID, PlanID: p.ID, PlanName: p.Name, ExpiresAt: now.AddDate(0, 0, p.DurationDays), TrafficLimitBytes: p.TrafficLimitBytes, BandwidthKbps: p.BandwidthKbps, AllowTCP: p.AllowTCP, AllowUDP: p.AllowUDP, AllowHTTP: p.AllowHTTP, AllowHTTPS: p.AllowHTTPS, AllowCustomDomain: p.AllowCustomDomain, AllowAutoCert: p.AllowAutoCert, MaxTunnels: p.MaxTunnels, MaxDomains: p.MaxDomains, Status: "active"}
+	sub := Subscription{UserID: userID, PlanID: p.ID, PlanName: p.Name, ExpiresAt: now.AddDate(0, 0, p.DurationDays), TrafficLimitBytes: p.TrafficLimitBytes, BandwidthKbps: p.BandwidthKbps, AllowTCP: p.AllowTCP, AllowUDP: p.AllowUDP, AllowHTTP: p.AllowHTTP, AllowHTTPS: p.AllowHTTPS, AllowCustomDomain: p.AllowCustomDomain, AllowAutoCert: p.AllowAutoCert, MaxTunnels: p.MaxTunnels, MaxTCPTunnels: p.MaxTCPTunnels, MaxUDPTunnels: p.MaxUDPTunnels, MaxHTTPTunnels: p.MaxHTTPTunnels, MaxHTTPSTunnels: p.MaxHTTPSTunnels, MaxDomains: p.MaxDomains, Status: "active"}
 	s.subscriptions[userID] = sub
 	return sub, nil
 }
@@ -153,6 +154,12 @@ func (s *Store) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
 	sub, ok := s.subscriptions[userID]
 	if !ok || sub.Status != "active" || time.Now().After(sub.ExpiresAt) {
 		return Tunnel{}, ErrForbidden
+	}
+	if sub.TrafficLimitBytes > 0 && sub.TrafficUsedBytes >= sub.TrafficLimitBytes {
+		return Tunnel{}, ErrForbidden
+	}
+	if err := s.checkTunnelLimitsLocked(userID, sub, strings.ToLower(req.Type)); err != nil {
+		return Tunnel{}, err
 	}
 	typ := strings.ToLower(req.Type)
 	if req.Name == "" || req.LocalHost == "" || req.LocalPort <= 0 {
@@ -212,6 +219,56 @@ func (s *Store) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
 	}
 	s.tunnels[t.ID] = t
 	return t, nil
+}
+
+func (s *Store) checkTunnelLimitsLocked(userID int64, sub Subscription, typ string) error {
+	total, tcp, udp, httpc, httpsc, domains := 0, 0, 0, 0, 0, 0
+	for _, t := range s.tunnels {
+		if t.UserID != userID || t.Status == "deleted" || t.Status == "disabled" {
+			continue
+		}
+		total++
+		switch t.Type {
+		case "tcp":
+			tcp++
+		case "udp":
+			udp++
+		case "http":
+			httpc++
+			domains++
+		case "https":
+			httpsc++
+			domains++
+		}
+	}
+	if sub.MaxTunnels > 0 && total >= sub.MaxTunnels {
+		return ErrForbidden
+	}
+	switch typ {
+	case "tcp":
+		if sub.MaxTCPTunnels > 0 && tcp >= sub.MaxTCPTunnels {
+			return ErrForbidden
+		}
+	case "udp":
+		if sub.MaxUDPTunnels > 0 && udp >= sub.MaxUDPTunnels {
+			return ErrForbidden
+		}
+	case "http":
+		if sub.MaxHTTPTunnels > 0 && httpc >= sub.MaxHTTPTunnels {
+			return ErrForbidden
+		}
+		if sub.MaxDomains > 0 && domains >= sub.MaxDomains {
+			return ErrForbidden
+		}
+	case "https":
+		if sub.MaxHTTPSTunnels > 0 && httpsc >= sub.MaxHTTPSTunnels {
+			return ErrForbidden
+		}
+		if sub.MaxDomains > 0 && domains >= sub.MaxDomains {
+			return ErrForbidden
+		}
+	}
+	return nil
 }
 
 func allocate(used map[int]bool, start, end int) (int, error) {
@@ -304,4 +361,49 @@ func (s *Store) CreateRedeemCodes(planID int64, count int, prefix string) ([]Red
 		out = append(out, rc)
 	}
 	return out, nil
+}
+
+func (s *Store) ReportTraffic(userID int64, reports []TrafficReport) (TrafficSummary, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sub, ok := s.subscriptions[userID]
+	if !ok {
+		return TrafficSummary{}, ErrNotFound
+	}
+	var added int64
+	for _, r := range reports {
+		if r.BytesIn < 0 || r.BytesOut < 0 {
+			continue
+		}
+		if r.TunnelID != 0 {
+			if t, ok := s.tunnels[r.TunnelID]; !ok || t.UserID != userID {
+				continue
+			}
+		}
+		added += r.BytesIn + r.BytesOut
+	}
+	sub.TrafficUsedBytes += added
+	s.todayTraffic += added
+	s.subscriptions[userID] = sub
+	return trafficSummaryFromSub(userID, sub, s.todayTraffic), nil
+}
+
+func (s *Store) TrafficSummary(userID int64) (TrafficSummary, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sub, ok := s.subscriptions[userID]
+	if !ok {
+		return TrafficSummary{}, ErrNotFound
+	}
+	return trafficSummaryFromSub(userID, sub, s.todayTraffic), nil
+}
+
+func (s *Store) TotalTrafficToday() int64 { s.mu.Lock(); defer s.mu.Unlock(); return s.todayTraffic }
+
+func trafficSummaryFromSub(userID int64, sub Subscription, today int64) TrafficSummary {
+	left := sub.TrafficLimitBytes - sub.TrafficUsedBytes
+	if left < 0 {
+		left = 0
+	}
+	return TrafficSummary{UserID: userID, TrafficLimitBytes: sub.TrafficLimitBytes, TrafficUsedBytes: sub.TrafficUsedBytes, TrafficLeftBytes: left, TodayBytes: today}
 }

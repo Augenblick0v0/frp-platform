@@ -123,3 +123,9 @@ func quoteList(items []string) string {
 	}
 	return strings.Join(out, ", ")
 }
+
+type TrafficReport struct {
+	TunnelID int64 `json:"tunnel_id"`
+	BytesIn  int64 `json:"bytes_in"`
+	BytesOut int64 `json:"bytes_out"`
+}

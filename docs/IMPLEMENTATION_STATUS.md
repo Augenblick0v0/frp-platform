@@ -23,6 +23,10 @@
 - Certbot Let's Encrypt 证书申请命令封装，支持 dry-run。
 - Nginx test/reload 命令封装。
 - 管理后台域名与证书操作入口。
+- 套餐限制校验：总隧道数、各协议隧道数、域名数、流量超限禁止创建。
+- 流量统计 API：客户端上报、用户查询、后台今日总流量。
+- PostgreSQL traffic_logs 表和 subscription traffic_used_bytes 更新。
+- 用户面板/客户端 WebUI 流量展示与上报入口。
 - Docker Compose、Nginx、frps 部署模板。
 - Go 客户端骨架。
 

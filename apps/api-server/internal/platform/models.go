@@ -47,6 +47,10 @@ type Subscription struct {
 	AllowCustomDomain bool      `json:"allow_custom_domain"`
 	AllowAutoCert     bool      `json:"allow_auto_cert"`
 	MaxTunnels        int       `json:"max_tunnels"`
+	MaxTCPTunnels     int       `json:"max_tcp_tunnels"`
+	MaxUDPTunnels     int       `json:"max_udp_tunnels"`
+	MaxHTTPTunnels    int       `json:"max_http_tunnels"`
+	MaxHTTPSTunnels   int       `json:"max_https_tunnels"`
 	MaxDomains        int       `json:"max_domains"`
 	Status            string    `json:"status"`
 }
@@ -86,4 +90,18 @@ type Settings struct {
 	UDPPortStart   int    `json:"udp_port_start"`
 	UDPPortEnd     int    `json:"udp_port_end"`
 	PurchaseURL    string `json:"purchase_url"`
+}
+
+type TrafficReport struct {
+	TunnelID int64 `json:"tunnel_id"`
+	BytesIn  int64 `json:"bytes_in"`
+	BytesOut int64 `json:"bytes_out"`
+}
+
+type TrafficSummary struct {
+	UserID            int64 `json:"user_id"`
+	TrafficLimitBytes int64 `json:"traffic_limit_bytes"`
+	TrafficUsedBytes  int64 `json:"traffic_used_bytes"`
+	TrafficLeftBytes  int64 `json:"traffic_left_bytes"`
+	TodayBytes        int64 `json:"today_bytes"`
 }

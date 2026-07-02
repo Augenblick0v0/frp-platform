@@ -17,4 +17,7 @@ type Backend interface {
 	AllTunnels() []Tunnel
 	Settings() Settings
 	UpdateSettings(in Settings) Settings
+	ReportTraffic(userID int64, reports []TrafficReport) (TrafficSummary, error)
+	TrafficSummary(userID int64) (TrafficSummary, error)
+	TotalTrafficToday() int64
 }

@@ -114,6 +114,16 @@ CREATE TABLE IF NOT EXISTS port_allocations (
     UNIQUE(protocol, port)
 );
 
+CREATE TABLE IF NOT EXISTS traffic_logs (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id),
+    tunnel_id BIGINT REFERENCES tunnels(id),
+    bytes_in BIGINT NOT NULL DEFAULT 0,
+    bytes_out BIGINT NOT NULL DEFAULT 0,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_traffic_user_time ON traffic_logs(user_id, recorded_at);
+
 CREATE TABLE IF NOT EXISTS system_settings (
     key VARCHAR(128) PRIMARY KEY,
     value TEXT NOT NULL,

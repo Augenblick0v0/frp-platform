@@ -181,6 +181,12 @@ func (s *SQLStore) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
 	if err != nil || sub.Status != "active" {
 		return Tunnel{}, ErrForbidden
 	}
+	if sub.TrafficLimitBytes > 0 && sub.TrafficUsedBytes >= sub.TrafficLimitBytes {
+		return Tunnel{}, ErrForbidden
+	}
+	if err := s.checkSQLTunnelLimits(userID, sub, strings.ToLower(req.Type)); err != nil {
+		return Tunnel{}, err
+	}
 	st := s.Settings()
 	typ := strings.ToLower(req.Type)
 	if req.Name == "" || req.LocalHost == "" || req.LocalPort <= 0 {
@@ -318,7 +324,7 @@ func scanPlan(row *sql.Row) (Plan, error) {
 	return p, err
 }
 func planToSub(userID int64, p Plan, expires time.Time) Subscription {
-	return Subscription{UserID: userID, PlanID: p.ID, PlanName: p.Name, ExpiresAt: expires, TrafficLimitBytes: p.TrafficLimitBytes, BandwidthKbps: p.BandwidthKbps, AllowTCP: p.AllowTCP, AllowUDP: p.AllowUDP, AllowHTTP: p.AllowHTTP, AllowHTTPS: p.AllowHTTPS, AllowCustomDomain: p.AllowCustomDomain, AllowAutoCert: p.AllowAutoCert, MaxTunnels: p.MaxTunnels, MaxDomains: p.MaxDomains, Status: "active"}
+	return Subscription{UserID: userID, PlanID: p.ID, PlanName: p.Name, ExpiresAt: expires, TrafficLimitBytes: p.TrafficLimitBytes, BandwidthKbps: p.BandwidthKbps, AllowTCP: p.AllowTCP, AllowUDP: p.AllowUDP, AllowHTTP: p.AllowHTTP, AllowHTTPS: p.AllowHTTPS, AllowCustomDomain: p.AllowCustomDomain, AllowAutoCert: p.AllowAutoCert, MaxTunnels: p.MaxTunnels, MaxTCPTunnels: p.MaxTCPTunnels, MaxUDPTunnels: p.MaxUDPTunnels, MaxHTTPTunnels: p.MaxHTTPTunnels, MaxHTTPSTunnels: p.MaxHTTPSTunnels, MaxDomains: p.MaxDomains, Status: "active"}
 }
 func isUnique(err error) bool {
 	return err != nil && (strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint"))
@@ -403,4 +409,105 @@ func (s *SQLStore) CreateRedeemCodes(planID int64, count int, prefix string) ([]
 		return nil, err
 	}
 	return out, nil
+}
+
+func (s *SQLStore) checkSQLTunnelLimits(userID int64, sub Subscription, typ string) error {
+	rows, err := s.db.Query(`SELECT type, count(*) FROM tunnels WHERE user_id=$1 AND status NOT IN ('deleted','disabled') GROUP BY type`, userID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	total, domains := 0, 0
+	counts := map[string]int{}
+	for rows.Next() {
+		var t string
+		var c int
+		_ = rows.Scan(&t, &c)
+		counts[t] = c
+		total += c
+		if t == "http" || t == "https" {
+			domains += c
+		}
+	}
+	if sub.MaxTunnels > 0 && total >= sub.MaxTunnels {
+		return ErrForbidden
+	}
+	switch typ {
+	case "tcp":
+		if sub.MaxTCPTunnels > 0 && counts["tcp"] >= sub.MaxTCPTunnels {
+			return ErrForbidden
+		}
+	case "udp":
+		if sub.MaxUDPTunnels > 0 && counts["udp"] >= sub.MaxUDPTunnels {
+			return ErrForbidden
+		}
+	case "http":
+		if sub.MaxHTTPTunnels > 0 && counts["http"] >= sub.MaxHTTPTunnels {
+			return ErrForbidden
+		}
+		if sub.MaxDomains > 0 && domains >= sub.MaxDomains {
+			return ErrForbidden
+		}
+	case "https":
+		if sub.MaxHTTPSTunnels > 0 && counts["https"] >= sub.MaxHTTPSTunnels {
+			return ErrForbidden
+		}
+		if sub.MaxDomains > 0 && domains >= sub.MaxDomains {
+			return ErrForbidden
+		}
+	}
+	return nil
+}
+
+func (s *SQLStore) ReportTraffic(userID int64, reports []TrafficReport) (TrafficSummary, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return TrafficSummary{}, err
+	}
+	defer tx.Rollback()
+	var added int64
+	for _, r := range reports {
+		if r.BytesIn < 0 || r.BytesOut < 0 {
+			continue
+		}
+		if r.TunnelID != 0 {
+			var owner int64
+			if err := tx.QueryRow(`SELECT user_id FROM tunnels WHERE id=$1`, r.TunnelID).Scan(&owner); err != nil || owner != userID {
+				continue
+			}
+		}
+		_, err := tx.Exec(`INSERT INTO traffic_logs (user_id,tunnel_id,bytes_in,bytes_out) VALUES ($1,NULLIF($2,0),$3,$4)`, userID, r.TunnelID, r.BytesIn, r.BytesOut)
+		if err != nil {
+			return TrafficSummary{}, err
+		}
+		added += r.BytesIn + r.BytesOut
+	}
+	_, err = tx.Exec(`UPDATE subscriptions SET traffic_used_bytes=traffic_used_bytes+$1, updated_at=now() WHERE user_id=$2 AND status='active'`, added, userID)
+	if err != nil {
+		return TrafficSummary{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return TrafficSummary{}, err
+	}
+	return s.TrafficSummary(userID)
+}
+
+func (s *SQLStore) TrafficSummary(userID int64) (TrafficSummary, error) {
+	sub, err := s.Subscription(userID)
+	if err != nil {
+		return TrafficSummary{}, err
+	}
+	left := sub.TrafficLimitBytes - sub.TrafficUsedBytes
+	if left < 0 {
+		left = 0
+	}
+	var today int64
+	_ = s.db.QueryRow(`SELECT coalesce(sum(bytes_in+bytes_out),0) FROM traffic_logs WHERE user_id=$1 AND recorded_at >= date_trunc('day', now())`, userID).Scan(&today)
+	return TrafficSummary{UserID: userID, TrafficLimitBytes: sub.TrafficLimitBytes, TrafficUsedBytes: sub.TrafficUsedBytes, TrafficLeftBytes: left, TodayBytes: today}, nil
+}
+
+func (s *SQLStore) TotalTrafficToday() int64 {
+	var today int64
+	_ = s.db.QueryRow(`SELECT coalesce(sum(bytes_in+bytes_out),0) FROM traffic_logs WHERE recorded_at >= date_trunc('day', now())`).Scan(&today)
+	return today
 }
