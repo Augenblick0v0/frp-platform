@@ -283,3 +283,30 @@ docker exec frp-platform-postgres pg_dump -U frp_platform frp_platform > backup.
 - 不把 Docker socket 直接暴露给 API Server。
 - 定期备份数据库和证书。
 - 将后台域名放到可信网络或加额外访问控制。
+
+## 控制面与 frps 节点分离部署
+
+如果不希望后台和 frps 节点运行在同一台服务器，使用：
+
+```text
+deploy/docker-compose.control.yml  控制面：后台、用户面板、API、数据库、邮件服务
+deploy/docker-compose.node.yml     节点面：frps、节点 Nginx、node-agent、证书运行环境
+```
+
+完整步骤见：`deploy/SPLIT_DEPLOYMENT.md`。
+
+分离模式下，在控制面 `.env.control` 配置：
+
+```env
+NODE_AGENT_URL=http://NODE_SERVER_IP:8090
+NODE_AGENT_TOKEN=<same-token-as-node>
+```
+
+在节点面 `.env.node` 配置相同的：
+
+```env
+NODE_AGENT_TOKEN=<same-token-as-control>
+```
+
+配置后，后台的 frps 管理、Nginx reload、HTTPS 配置生成、Let’s Encrypt 申请和续期会通过 `node-agent` 在节点服务器执行。
+

@@ -16,6 +16,7 @@ import (
 )
 
 type Automation struct {
+	NodeAgent      *NodeAgentClient
 	NginxConfDir   string
 	WebrootDir     string
 	LetsEncryptDir string
@@ -49,6 +50,7 @@ type CertificateResult struct {
 
 func AutomationFromEnv() *Automation {
 	return &Automation{
+		NodeAgent:      NodeAgentClientFromEnv(),
 		NginxConfDir:   getenv("NGINX_CONF_DIR", "/app/runtime/nginx-conf.d"),
 		WebrootDir:     getenv("ACME_WEBROOT", "/var/www/certbot"),
 		LetsEncryptDir: getenv("LETSENCRYPT_DIR", "/etc/letsencrypt"),
@@ -99,6 +101,9 @@ func (a *Automation) RenderHTTPSConfig(domain string) (string, error) {
 }
 
 func (a *Automation) WriteHTTPSConfig(domain string) (NginxConfigResult, error) {
+	if a.NodeAgent.enabled() {
+		return a.NodeAgent.WriteHTTPSConfig(context.Background(), domain)
+	}
 	cfg, err := a.RenderHTTPSConfig(domain)
 	if err != nil {
 		return NginxConfigResult{}, err
@@ -114,6 +119,9 @@ func (a *Automation) WriteHTTPSConfig(domain string) (NginxConfigResult, error) 
 }
 
 func (a *Automation) RequestCertificate(ctx context.Context, domain, email string) (CertificateResult, error) {
+	if a.NodeAgent.enabled() {
+		return a.NodeAgent.RequestCertificate(ctx, domain, email)
+	}
 	domain = sanitizeDomain(domain)
 	if domain == "" || strings.TrimSpace(email) == "" {
 		return CertificateResult{}, fmt.Errorf("domain and email required")
@@ -138,9 +146,15 @@ func (a *Automation) RequestCertificate(ctx context.Context, domain, email strin
 }
 
 func (a *Automation) TestNginx(ctx context.Context) (string, error) {
+	if a.NodeAgent.enabled() {
+		return a.NodeAgent.TestNginx(ctx)
+	}
 	return runShell(ctx, a.NginxTestCmd)
 }
 func (a *Automation) ReloadNginx(ctx context.Context) (string, error) {
+	if a.NodeAgent.enabled() {
+		return a.NodeAgent.ReloadNginx(ctx)
+	}
 	return runShell(ctx, a.NginxReloadCmd)
 }
 
@@ -191,6 +205,12 @@ func (a *Automation) CertificatePaths(domain string) (string, string) {
 }
 
 func (a *Automation) InspectCertificate(domain string) (*time.Time, *time.Time) {
+	if a.NodeAgent.enabled() {
+		res, err := a.NodeAgent.InspectCertificate(context.Background(), domain)
+		if err == nil {
+			return res.IssuedAt, res.ExpiresAt
+		}
+	}
 	certPath, _ := a.CertificatePaths(domain)
 	data, err := os.ReadFile(certPath)
 	if err != nil {

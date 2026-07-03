@@ -388,6 +388,15 @@ func (s *Server) adminFRPSStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) adminFRPSConfig(w http.ResponseWriter, r *http.Request) {
+	if s.frps.NodeAgent.enabled() {
+		out, err := s.frps.NodeAgent.FRPSConfig(r.Context())
+		if err != nil {
+			fail(w, 500, "FRPS_CONFIG_READ_FAILED", err.Error())
+			return
+		}
+		ok(w, out)
+		return
+	}
 	text, err := s.frps.Config()
 	if err != nil {
 		fail(w, 500, "FRPS_CONFIG_READ_FAILED", err.Error())
@@ -397,6 +406,15 @@ func (s *Server) adminFRPSConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) adminFRPSLogs(w http.ResponseWriter, r *http.Request) {
+	if s.frps.NodeAgent.enabled() {
+		out, err := s.frps.NodeAgent.FRPSLogs(r.Context())
+		if err != nil {
+			fail(w, 500, "FRPS_LOG_READ_FAILED", err.Error())
+			return
+		}
+		ok(w, out)
+		return
+	}
 	text, err := s.frps.Logs(65536)
 	if err != nil {
 		fail(w, 500, "FRPS_LOG_READ_FAILED", err.Error())

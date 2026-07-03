@@ -9,6 +9,7 @@ import (
 )
 
 type FRPSManager struct {
+	NodeAgent  *NodeAgentClient
 	ConfigPath string
 	LogPath    string
 	StatusCmd  string
@@ -32,6 +33,7 @@ type FRPSCommandResult struct {
 
 func FRPSManagerFromEnv() *FRPSManager {
 	return &FRPSManager{
+		NodeAgent:  NodeAgentClientFromEnv(),
 		ConfigPath: getenv("FRPS_CONFIG_PATH", "/app/runtime/frps/frps.toml"),
 		LogPath:    getenv("FRPS_LOG_PATH", "/app/runtime/logs/frps/frps.log"),
 		StatusCmd:  os.Getenv("FRPS_STATUS_CMD"),
@@ -41,6 +43,13 @@ func FRPSManagerFromEnv() *FRPSManager {
 }
 
 func (m *FRPSManager) Status(ctx context.Context) FRPSStatus {
+	if m.NodeAgent.enabled() {
+		st, err := m.NodeAgent.FRPSStatus(ctx)
+		if err == nil {
+			return st
+		}
+		return FRPSStatus{Healthy: false, Output: err.Error()}
+	}
 	st := FRPSStatus{ConfigPath: m.ConfigPath, LogPath: m.LogPath, StatusCmd: m.StatusCmd}
 	if strings.TrimSpace(m.StatusCmd) == "" {
 		if _, err := os.Stat(m.ConfigPath); err == nil {
@@ -61,10 +70,30 @@ func (m *FRPSManager) Status(ctx context.Context) FRPSStatus {
 }
 
 func (m *FRPSManager) Config() (string, error) {
+	if m.NodeAgent.enabled() {
+		out, err := m.NodeAgent.FRPSConfig(context.Background())
+		if err != nil {
+			return "", err
+		}
+		if s, ok := out["config"].(string); ok {
+			return s, nil
+		}
+		return "", nil
+	}
 	return readTextFile(m.ConfigPath, 256*1024)
 }
 
 func (m *FRPSManager) Logs(limit int64) (string, error) {
+	if m.NodeAgent.enabled() {
+		out, err := m.NodeAgent.FRPSLogs(context.Background())
+		if err != nil {
+			return "", err
+		}
+		if s, ok := out["logs"].(string); ok {
+			return s, nil
+		}
+		return "", nil
+	}
 	if limit <= 0 {
 		limit = 32768
 	}
@@ -72,10 +101,16 @@ func (m *FRPSManager) Logs(limit int64) (string, error) {
 }
 
 func (m *FRPSManager) Restart(ctx context.Context) (FRPSCommandResult, error) {
+	if m.NodeAgent.enabled() {
+		return m.NodeAgent.FRPSRestart(ctx)
+	}
 	return m.run(ctx, m.RestartCmd)
 }
 
 func (m *FRPSManager) Reload(ctx context.Context) (FRPSCommandResult, error) {
+	if m.NodeAgent.enabled() {
+		return m.NodeAgent.FRPSReload(ctx)
+	}
 	return m.run(ctx, m.ReloadCmd)
 }
 

@@ -1,0 +1,98 @@
+services:
+  control-nginx:
+    image: nginx:1.27-alpine
+    container_name: frp-control-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx-control/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx-control/conf.d:/etc/nginx/conf.d:ro
+      - ./logs/control-nginx:/var/log/nginx
+    depends_on:
+      - api-server
+      - admin-web
+      - user-web
+    restart: unless-stopped
+
+  api-server:
+    build:
+      context: ..
+      dockerfile: apps/api-server/Dockerfile
+    container_name: frp-control-api
+    env_file: .env.control
+    environment:
+      HTTP_ADDR: ":8080"
+      DATABASE_URL: ${DATABASE_URL}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME}
+      SMTP_TLS: ${SMTP_TLS}
+      SMTP_SKIP_VERIFY: ${SMTP_SKIP_VERIFY}
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL}
+      NODE_AGENT_URL: ${NODE_AGENT_URL}
+      NODE_AGENT_TOKEN: ${NODE_AGENT_TOKEN}
+      CERT_RENEW_BEFORE_DAYS: ${CERT_RENEW_BEFORE_DAYS}
+      CERT_RENEW_INTERVAL: ${CERT_RENEW_INTERVAL}
+    depends_on:
+      - postgres
+      - redis
+      - mail-server
+    restart: unless-stopped
+
+  admin-web:
+    build:
+      context: ..
+      dockerfile: apps/admin-web/Dockerfile
+    container_name: frp-control-admin-web
+    restart: unless-stopped
+
+  user-web:
+    build:
+      context: ..
+      dockerfile: apps/user-web/Dockerfile
+    container_name: frp-control-user-web
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: frp-control-postgres
+    env_file: .env.control
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./postgres/data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: frp-control-redis
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - ./redis/data:/data
+    restart: unless-stopped
+
+  mail-server:
+    image: docker.io/mailserver/docker-mailserver:latest
+    container_name: frp-control-mail
+    hostname: mail
+    domainname: ${PLATFORM_DOMAIN}
+    env_file: .env.control
+    ports:
+      - "25:25"
+      - "587:587"
+      - "993:993"
+    volumes:
+      - ./mail/data:/var/mail
+      - ./mail/state:/var/mail-state
+      - ./mail/logs:/var/log/mail
+      - ./mail/config:/tmp/docker-mailserver
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
