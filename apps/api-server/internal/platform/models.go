@@ -92,6 +92,41 @@ type Settings struct {
 	PurchaseURL    string `json:"purchase_url"`
 }
 
+type Node struct {
+	ID             int64      `json:"id"`
+	Name           string     `json:"name"`
+	AgentURL       string     `json:"agent_url"`
+	AgentToken     string     `json:"-"`
+	BindToken      string     `json:"bind_token,omitempty"`
+	PublicURL      string     `json:"public_url"`
+	FRPEntryDomain string     `json:"frp_entry_domain"`
+	ServerAddr     string     `json:"server_addr"`
+	FRPServerPort  int        `json:"frp_server_port"`
+	TCPPortStart   int        `json:"tcp_port_start"`
+	TCPPortEnd     int        `json:"tcp_port_end"`
+	UDPPortStart   int        `json:"udp_port_start"`
+	UDPPortEnd     int        `json:"udp_port_end"`
+	Status         string     `json:"status"`
+	LastSeenAt     *time.Time `json:"last_seen_at,omitempty"`
+	LastError      string     `json:"last_error,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+}
+
+type NodeBindRequest struct {
+	BindToken      string `json:"bind_token"`
+	Name           string `json:"name"`
+	AgentURL       string `json:"agent_url"`
+	PublicURL      string `json:"public_url"`
+	FRPEntryDomain string `json:"frp_entry_domain"`
+	ServerAddr     string `json:"server_addr"`
+	FRPServerPort  int    `json:"frp_server_port"`
+	TCPPortStart   int    `json:"tcp_port_start"`
+	TCPPortEnd     int    `json:"tcp_port_end"`
+	UDPPortStart   int    `json:"udp_port_start"`
+	UDPPortEnd     int    `json:"udp_port_end"`
+}
+
 type TrafficReport struct {
 	TunnelID int64 `json:"tunnel_id"`
 	BytesIn  int64 `json:"bytes_in"`

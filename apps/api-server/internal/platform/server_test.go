@@ -3,6 +3,7 @@ package platform
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -158,5 +159,43 @@ func TestAdminRenewDueCertificates(t *testing.T) {
 	logs := store.AdminOperationLogs(10)
 	if len(logs) == 0 || logs[0].Action != "certificate.renew_due" {
 		t.Fatalf("unexpected logs %#v", logs)
+	}
+}
+
+func TestAdminNodeCreateBindAndRemoteStatus(t *testing.T) {
+	fakeAgent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "" {
+			t.Fatalf("missing node agent auth header")
+		}
+		if r.URL.Path != "/api/frps/status" {
+			t.Fatalf("unexpected fake agent path %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(FRPSStatus{Healthy: true, Output: "fake frps ok"})
+	}))
+	defer fakeAgent.Close()
+
+	store := NewStore()
+	s := NewServer(store)
+	login := post(t, s, "/api/admin/login", map[string]any{"email": "admin@example.com", "password": "admin123456"}, "")
+	token := login["access_token"].(string)
+
+	created := post(t, s, "/api/admin/nodes", map[string]any{"name": "edge-1", "agent_url": fakeAgent.URL, "frp_entry_domain": "frp.example.com", "server_addr": "frp.example.com", "frp_server_port": 7000}, token)
+	bindToken := created["bind_token"].(string)
+	if bindToken == "" {
+		t.Fatalf("expected bind token in created node %#v", created)
+	}
+
+	bound := post(t, s, "/api/nodes/bind", map[string]any{"bind_token": bindToken, "name": "edge-1", "agent_url": fakeAgent.URL, "frp_entry_domain": "frp.example.com", "server_addr": "frp.example.com"}, "")
+	if bound["agent_token"].(string) == "" {
+		t.Fatalf("expected agent token in bind response %#v", bound)
+	}
+
+	nodeID := int64(created["id"].(float64))
+	rr := request(t, s, "GET", fmt.Sprintf("/api/admin/nodes/%d/status", nodeID), nil, token)
+	if rr.Code != 200 {
+		t.Fatalf("node status code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if store.Nodes()[0].Status != "online" {
+		t.Fatalf("expected node online, got %#v", store.Nodes()[0])
 	}
 }

@@ -36,6 +36,9 @@ type Store struct {
 	settings        Settings
 	todayTraffic    int64
 	certificates    map[string]CertificateRecord
+	nodes           map[int64]Node
+	nodesByBind     map[string]int64
+	nextNodeID      int64
 	nextCertID      int64
 	operationLogs   []AdminOperationLog
 	nextOperationID int64
@@ -44,8 +47,8 @@ type Store struct {
 func NewStore() *Store {
 	s := &Store{
 		users: map[int64]User{}, usersByEmail: map[string]int64{}, admins: map[int64]AdminUser{}, adminsByEmail: map[string]int64{}, sessions: map[string]int64{}, adminSessions: map[string]int64{}, emailCodes: map[string]string{},
-		plans: map[int64]Plan{}, redeemCodes: map[string]RedeemCode{}, subscriptions: map[int64]Subscription{}, tunnels: map[int64]Tunnel{}, domains: map[string]int64{}, certificates: map[string]CertificateRecord{},
-		usedTCP: map[int]bool{}, usedUDP: map[int]bool{}, nextUserID: 1, nextAdminID: 1, nextPlanID: 1, nextTunnelID: 1, nextCertID: 1, nextOperationID: 1,
+		plans: map[int64]Plan{}, redeemCodes: map[string]RedeemCode{}, subscriptions: map[int64]Subscription{}, tunnels: map[int64]Tunnel{}, domains: map[string]int64{}, certificates: map[string]CertificateRecord{}, nodes: map[int64]Node{}, nodesByBind: map[string]int64{},
+		usedTCP: map[int]bool{}, usedUDP: map[int]bool{}, nextUserID: 1, nextAdminID: 1, nextPlanID: 1, nextTunnelID: 1, nextNodeID: 1, nextCertID: 1, nextOperationID: 1,
 		settings: Settings{PlatformDomain: "example.com", FRPEntryDomain: "frp.example.com", ServerAddr: "frp.example.com", FRPServerPort: 7000, TCPPortStart: 20000, TCPPortEnd: 29999, UDPPortStart: 30000, UDPPortEnd: 39999, PurchaseURL: "https://example.com/buy"},
 	}
 	plan := Plan{ID: s.nextPlanID, Name: "高级套餐", Description: "支持 TCP/UDP/HTTP/HTTPS、自定义域名和自动证书", DurationDays: 30, TrafficLimitBytes: 100 * 1024 * 1024 * 1024, BandwidthKbps: 10240, MaxTunnels: 20, MaxTCPTunnels: 10, MaxUDPTunnels: 10, MaxHTTPTunnels: 10, MaxHTTPSTunnels: 10, AllowTCP: true, AllowUDP: true, AllowHTTP: true, AllowHTTPS: true, AllowCustomDomain: true, MaxDomains: 10, AllowAutoCert: true, Status: "active"}
@@ -347,6 +350,131 @@ func (s *Store) AllTunnels() []Tunnel {
 	}
 	return out
 }
+
+func (s *Store) Nodes() []Node {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []Node{}
+	for _, n := range s.nodes {
+		out = append(out, n)
+	}
+	return out
+}
+
+func (s *Store) Node(id int64) (Node, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n, ok := s.nodes[id]
+	if !ok {
+		return Node{}, ErrNotFound
+	}
+	return n, nil
+}
+
+func (s *Store) CreateNode(node Node) (Node, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	if strings.TrimSpace(node.Name) == "" {
+		node.Name = fmt.Sprintf("node-%d", s.nextNodeID)
+	}
+	if node.FRPServerPort == 0 {
+		node.FRPServerPort = 7000
+	}
+	if node.TCPPortStart == 0 {
+		node.TCPPortStart = 20000
+	}
+	if node.TCPPortEnd == 0 {
+		node.TCPPortEnd = 29999
+	}
+	if node.UDPPortStart == 0 {
+		node.UDPPortStart = 30000
+	}
+	if node.UDPPortEnd == 0 {
+		node.UDPPortEnd = 39999
+	}
+	if strings.TrimSpace(node.Status) == "" {
+		node.Status = "pending"
+	}
+	node.ID = s.nextNodeID
+	s.nextNodeID++
+	if node.BindToken == "" {
+		node.BindToken = fmt.Sprintf("node-bind-%d-%d", node.ID, time.Now().UnixNano())
+	}
+	if node.AgentToken == "" {
+		node.AgentToken = fmt.Sprintf("node-agent-%d-%d", node.ID, time.Now().UnixNano())
+	}
+	node.CreatedAt = now
+	node.UpdatedAt = now
+	s.nodes[node.ID] = node
+	s.nodesByBind[node.BindToken] = node.ID
+	return node, nil
+}
+
+func (s *Store) BindNode(req NodeBindRequest) (Node, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id, ok := s.nodesByBind[strings.TrimSpace(req.BindToken)]
+	if !ok {
+		return Node{}, ErrUnauthorized
+	}
+	n := s.nodes[id]
+	now := time.Now()
+	if strings.TrimSpace(req.Name) != "" {
+		n.Name = strings.TrimSpace(req.Name)
+	}
+	if strings.TrimSpace(req.AgentURL) != "" {
+		n.AgentURL = strings.TrimRight(strings.TrimSpace(req.AgentURL), "/")
+	}
+	if strings.TrimSpace(req.PublicURL) != "" {
+		n.PublicURL = strings.TrimRight(strings.TrimSpace(req.PublicURL), "/")
+	}
+	if strings.TrimSpace(req.FRPEntryDomain) != "" {
+		n.FRPEntryDomain = strings.TrimSpace(req.FRPEntryDomain)
+	}
+	if strings.TrimSpace(req.ServerAddr) != "" {
+		n.ServerAddr = strings.TrimSpace(req.ServerAddr)
+	}
+	if req.FRPServerPort > 0 {
+		n.FRPServerPort = req.FRPServerPort
+	}
+	if req.TCPPortStart > 0 {
+		n.TCPPortStart = req.TCPPortStart
+	}
+	if req.TCPPortEnd > 0 {
+		n.TCPPortEnd = req.TCPPortEnd
+	}
+	if req.UDPPortStart > 0 {
+		n.UDPPortStart = req.UDPPortStart
+	}
+	if req.UDPPortEnd > 0 {
+		n.UDPPortEnd = req.UDPPortEnd
+	}
+	n.Status = "online"
+	n.LastError = ""
+	n.LastSeenAt = &now
+	n.UpdatedAt = now
+	s.nodes[id] = n
+	return n, nil
+}
+
+func (s *Store) UpdateNodeStatus(id int64, status string, lastError string) (Node, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n, ok := s.nodes[id]
+	if !ok {
+		return Node{}, ErrNotFound
+	}
+	n.Status = status
+	n.LastError = lastError
+	n.UpdatedAt = time.Now()
+	if status == "online" {
+		n.LastSeenAt = &n.UpdatedAt
+	}
+	s.nodes[id] = n
+	return n, nil
+}
+
 func (s *Store) Settings() Settings { s.mu.Lock(); defer s.mu.Unlock(); return s.settings }
 func (s *Store) UpdateSettings(in Settings) Settings {
 	s.mu.Lock()

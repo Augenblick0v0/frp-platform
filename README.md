@@ -1,6 +1,6 @@
 # FRP Tunnel Platform
 
-可私有部署、可商业化运营的 FRP 内网穿透平台。当前仓库按 `/root/frp-platform-plans` 的规划落地，支持单节点一体化部署，也支持控制面与 frps 节点分离部署；包含 Nginx 80/443 入口、frps、Go API、Cloudflare 风格 WebUI、Linux/Windows 客户端 WebUI。
+可私有部署、可商业化运营的 FRP 内网穿透平台。当前仓库按 `/root/frp-platform-plans` 的规划落地，支持单节点一体化部署，也支持控制面与 frps 节点分离部署，并支持多节点管理、节点绑定和后台远程管理；包含 Nginx 80/443 入口、frps、Go API、Cloudflare 风格 WebUI、Linux/Windows 客户端 WebUI。
 
 ## 目录
 

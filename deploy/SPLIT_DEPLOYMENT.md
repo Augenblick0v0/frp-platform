@@ -184,3 +184,100 @@ frp.example.com -> 节点服务器 IP
 ```
 
 如果只有一台 4H4G，也可以使用分离 compose 在同一台机器上运行，便于以后迁移节点。
+
+## 七、多节点管理与节点绑定
+
+后台现在支持多个 frps 节点。推荐流程：
+
+### 1. 在管理后台创建节点
+
+进入管理后台的“多节点管理”，填写：
+
+```text
+节点名称：edge-node-1
+节点 Agent URL：http://NODE_SERVER_IP:8090
+节点入口域名：frp.example.com
+frpc 连接地址：frp.example.com
+frps 端口：7000
+TCP 端口池：20000-29999
+UDP 端口池：30000-39999
+```
+
+点击“新增节点并生成绑定 Token”。后台会返回：
+
+```text
+NODE_BIND_TOKEN=<后台生成的 bind token>
+```
+
+### 2. 在节点服务器配置绑定信息
+
+在节点服务器 `.env.node` 中填写：
+
+```env
+CONTROL_PLANE_URL=https://api.example.com
+NODE_BIND_TOKEN=<后台生成的 bind token>
+NODE_NAME=edge-node-1
+NODE_PUBLIC_AGENT_URL=http://NODE_SERVER_IP:8090
+NODE_PUBLIC_URL=http://NODE_SERVER_IP:8090
+FRP_ENTRY_DOMAIN=frp.example.com
+SERVER_ADDR=frp.example.com
+```
+
+如果 `NODE_AGENT_TOKEN` 留空，节点首次绑定后会从后台领取该节点专属的 agent token，并用于后续远程管理鉴权。
+
+### 3. 启动或重启节点
+
+```bash
+docker compose --env-file .env.node -f docker-compose.node.yml up -d --build
+```
+
+节点启动后，`node-agent` 会每 60 秒向控制面调用：
+
+```text
+POST /api/nodes/bind
+```
+
+绑定成功后，后台节点状态变为：
+
+```text
+online
+```
+
+### 4. 远程管理节点
+
+管理后台可对每个节点执行：
+
+```text
+frps 状态
+查看 frps 配置
+查看 frps 日志
+重启 frps
+重载 frps
+测试节点 Nginx
+重载节点 Nginx
+```
+
+对应 API：
+
+```text
+GET  /api/admin/nodes
+POST /api/admin/nodes
+GET  /api/admin/nodes/{id}
+POST /api/admin/nodes/{id}/status
+GET  /api/admin/nodes/{id}/frps-config
+GET  /api/admin/nodes/{id}/frps-logs
+POST /api/admin/nodes/{id}/frps-restart
+POST /api/admin/nodes/{id}/frps-reload
+POST /api/admin/nodes/{id}/nginx-test
+POST /api/admin/nodes/{id}/nginx-reload
+POST /api/nodes/bind
+```
+
+### 5. 防火墙建议
+
+节点服务器 `8090/tcp` 是管理代理端口，生产环境只允许控制面服务器 IP 访问。
+
+```text
+允许：控制面服务器 IP -> 节点服务器 8090/tcp
+拒绝：其他公网 IP -> 节点服务器 8090/tcp
+```

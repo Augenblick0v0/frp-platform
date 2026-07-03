@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -53,6 +54,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/client/heartbeat", s.auth(s.clientHeartbeat))
 	s.mux.HandleFunc("/api/client/tunnels", s.auth(s.clientTunnels))
 	s.mux.HandleFunc("/api/client/traffic", s.auth(s.clientTraffic))
+	s.mux.HandleFunc("/api/nodes/bind", s.nodeBind)
 	s.mux.HandleFunc("/api/admin/login", s.adminLogin)
 	s.mux.HandleFunc("/api/admin/me", s.adminAuth(s.adminMe))
 	s.mux.HandleFunc("/api/admin/dashboard", s.adminAuth(s.adminDashboard))
@@ -60,6 +62,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/admin/users", s.adminAuth(s.adminUsers))
 	s.mux.HandleFunc("/api/admin/redeem-codes", s.adminAuth(s.adminRedeemCodes))
 	s.mux.HandleFunc("/api/admin/tunnels", s.adminAuth(s.adminTunnels))
+	s.mux.HandleFunc("/api/admin/nodes", s.adminAuth(s.adminNodes))
+	s.mux.HandleFunc("/api/admin/nodes/", s.adminAuth(s.adminNodeAction))
 	s.mux.HandleFunc("/api/admin/settings", s.adminAuth(s.adminSettings))
 	s.mux.HandleFunc("/api/admin/settings/test-mail", s.adminAuth(s.adminTestMail))
 	s.mux.HandleFunc("/api/admin/domains/check-cname", s.adminAuth(s.adminCheckCNAME))
@@ -381,6 +385,151 @@ func (s *Server) adminRenderHTTPSNginx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ok(w, res)
+}
+
+func (s *Server) adminNodes(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		var in Node
+		if !decode(w, r, &in) {
+			return
+		}
+		node, err := s.store.CreateNode(in)
+		if err != nil {
+			handleErr(w, err)
+			return
+		}
+		s.recordAdminOperation(r, "node.create", node.Name, node.AgentURL)
+		ok(w, node)
+		return
+	}
+	ok(w, s.store.Nodes())
+}
+
+func (s *Server) adminNodeAction(w http.ResponseWriter, r *http.Request) {
+	id, action, parseOK := parseNodeAction(r.URL.Path)
+	if !parseOK {
+		fail(w, 404, "NODE_ACTION_NOT_FOUND", "node action not found")
+		return
+	}
+	node, err := s.store.Node(id)
+	if err != nil {
+		handleErr(w, err)
+		return
+	}
+	if action == "" {
+		ok(w, node)
+		return
+	}
+	client := NewNodeAgentClient(node.AgentURL, node.AgentToken)
+	switch action {
+	case "status":
+		st, err := client.FRPSStatus(r.Context())
+		if err != nil {
+			_, _ = s.store.UpdateNodeStatus(node.ID, "error", err.Error())
+			fail(w, 502, "NODE_STATUS_FAILED", err.Error())
+			return
+		}
+		_, _ = s.store.UpdateNodeStatus(node.ID, "online", "")
+		ok(w, st)
+	case "frps-config":
+		out, err := client.FRPSConfig(r.Context())
+		if err != nil {
+			fail(w, 502, "NODE_FRPS_CONFIG_FAILED", err.Error())
+			return
+		}
+		ok(w, out)
+	case "frps-logs":
+		out, err := client.FRPSLogs(r.Context())
+		if err != nil {
+			fail(w, 502, "NODE_FRPS_LOGS_FAILED", err.Error())
+			return
+		}
+		ok(w, out)
+	case "frps-restart":
+		if r.Method != http.MethodPost {
+			w.WriteHeader(405)
+			return
+		}
+		out, err := client.FRPSRestart(r.Context())
+		if err != nil {
+			fail(w, 502, "NODE_FRPS_RESTART_FAILED", err.Error()+"\n"+out.Output)
+			return
+		}
+		s.recordAdminOperation(r, "node.frps.restart", node.Name, out.Output)
+		ok(w, out)
+	case "frps-reload":
+		if r.Method != http.MethodPost {
+			w.WriteHeader(405)
+			return
+		}
+		out, err := client.FRPSReload(r.Context())
+		if err != nil {
+			fail(w, 502, "NODE_FRPS_RELOAD_FAILED", err.Error()+"\n"+out.Output)
+			return
+		}
+		s.recordAdminOperation(r, "node.frps.reload", node.Name, out.Output)
+		ok(w, out)
+	case "nginx-test":
+		if r.Method != http.MethodPost {
+			w.WriteHeader(405)
+			return
+		}
+		out, err := client.TestNginx(r.Context())
+		if err != nil {
+			fail(w, 502, "NODE_NGINX_TEST_FAILED", err.Error()+"\n"+out)
+			return
+		}
+		s.recordAdminOperation(r, "node.nginx.test", node.Name, out)
+		ok(w, map[string]string{"output": out})
+	case "nginx-reload":
+		if r.Method != http.MethodPost {
+			w.WriteHeader(405)
+			return
+		}
+		out, err := client.ReloadNginx(r.Context())
+		if err != nil {
+			fail(w, 502, "NODE_NGINX_RELOAD_FAILED", err.Error()+"\n"+out)
+			return
+		}
+		s.recordAdminOperation(r, "node.nginx.reload", node.Name, out)
+		ok(w, map[string]string{"output": out})
+	default:
+		fail(w, 404, "NODE_ACTION_NOT_FOUND", "unknown node action")
+	}
+}
+
+func (s *Server) nodeBind(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(405)
+		return
+	}
+	var in NodeBindRequest
+	if !decode(w, r, &in) {
+		return
+	}
+	node, err := s.store.BindNode(in)
+	if err != nil {
+		handleErr(w, err)
+		return
+	}
+	ok(w, map[string]any{"node": node, "agent_token": node.AgentToken})
+}
+
+func parseNodeAction(path string) (int64, string, bool) {
+	rest := strings.TrimPrefix(path, "/api/admin/nodes/")
+	if rest == path || rest == "" {
+		return 0, "", false
+	}
+	parts := strings.Split(strings.Trim(rest, "/"), "/")
+	id, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || id <= 0 {
+		return 0, "", false
+	}
+	action := ""
+	if len(parts) > 1 {
+		action = parts[1]
+	}
+	return id, action, true
 }
 
 func (s *Server) adminFRPSStatus(w http.ResponseWriter, r *http.Request) {

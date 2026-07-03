@@ -19,6 +19,11 @@ type Backend interface {
 	AllTunnels() []Tunnel
 	Settings() Settings
 	UpdateSettings(in Settings) Settings
+	Nodes() []Node
+	Node(id int64) (Node, error)
+	CreateNode(node Node) (Node, error)
+	BindNode(req NodeBindRequest) (Node, error)
+	UpdateNodeStatus(id int64, status string, lastError string) (Node, error)
 	ReportTraffic(userID int64, reports []TrafficReport) (TrafficSummary, error)
 	TrafficSummary(userID int64) (TrafficSummary, error)
 	TotalTrafficToday() int64

@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"frp-platform/apps/api-server/internal/platform"
 )
@@ -33,8 +37,69 @@ func main() {
 	mux.HandleFunc("/api/frps/restart", a.auth(a.frpsRestart))
 	mux.HandleFunc("/api/frps/reload", a.auth(a.frpsReload))
 	addr := getenv("NODE_AGENT_ADDR", ":8090")
+	go a.bindLoop()
 	log.Printf("node-agent listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, mux))
+}
+
+func (a *nodeAgent) bindLoop() {
+	control := strings.TrimRight(strings.TrimSpace(os.Getenv("CONTROL_PLANE_URL")), "/")
+	bindToken := strings.TrimSpace(os.Getenv("NODE_BIND_TOKEN"))
+	if control == "" || bindToken == "" {
+		return
+	}
+	for {
+		if err := a.bindOnce(control, bindToken); err != nil {
+			log.Printf("node bind failed: %v", err)
+		}
+		time.Sleep(60 * time.Second)
+	}
+}
+
+func (a *nodeAgent) bindOnce(control, bindToken string) error {
+	payload := platform.NodeBindRequest{
+		BindToken:      bindToken,
+		Name:           getenv("NODE_NAME", "edge-node"),
+		AgentURL:       getenv("NODE_PUBLIC_AGENT_URL", ""),
+		PublicURL:      getenv("NODE_PUBLIC_URL", ""),
+		FRPEntryDomain: getenv("FRP_ENTRY_DOMAIN", ""),
+		ServerAddr:     getenv("SERVER_ADDR", getenv("FRP_ENTRY_DOMAIN", "")),
+		FRPServerPort:  atoiEnv("FRP_BIND_PORT", 7000),
+		TCPPortStart:   atoiEnv("TCP_PORT_START", 20000),
+		TCPPortEnd:     atoiEnv("TCP_PORT_END", 29999),
+		UDPPortStart:   atoiEnv("UDP_PORT_START", 30000),
+		UDPPortEnd:     atoiEnv("UDP_PORT_END", 39999),
+	}
+	b, _ := json.Marshal(payload)
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Post(control+"/api/nodes/bind", "application/json", bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Node       platform.Node `json:"node"`
+		AgentToken string        `json:"agent_token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("control plane returned %s", resp.Status)
+	}
+	if a.token == "" && out.AgentToken != "" {
+		a.token = out.AgentToken
+		log.Printf("node bound to control plane as node %d", out.Node.ID)
+	}
+	return nil
+}
+
+func atoiEnv(k string, def int) int {
+	v, err := strconv.Atoi(strings.TrimSpace(os.Getenv(k)))
+	if err != nil || v <= 0 {
+		return def
+	}
+	return v
 }
 
 func (a *nodeAgent) auth(next http.HandlerFunc) http.HandlerFunc {

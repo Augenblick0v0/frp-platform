@@ -325,6 +325,104 @@ func (s *SQLStore) queryTunnels(suffix string, args ...any) []Tunnel {
 	}
 	return out
 }
+
+func (s *SQLStore) Nodes() []Node {
+	rows, err := s.db.Query(`SELECT id,name,coalesce(agent_url,''),agent_token,bind_token,coalesce(public_url,''),coalesce(frp_entry_domain,''),coalesce(server_addr,''),frp_server_port,tcp_port_start,tcp_port_end,udp_port_start,udp_port_end,status,last_seen_at,coalesce(last_error,''),created_at,updated_at FROM nodes ORDER BY id`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := []Node{}
+	for rows.Next() {
+		n, err := scanNode(rows)
+		if err == nil {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+func (s *SQLStore) Node(id int64) (Node, error) {
+	return scanNode(s.db.QueryRow(`SELECT id,name,coalesce(agent_url,''),agent_token,bind_token,coalesce(public_url,''),coalesce(frp_entry_domain,''),coalesce(server_addr,''),frp_server_port,tcp_port_start,tcp_port_end,udp_port_start,udp_port_end,status,last_seen_at,coalesce(last_error,''),created_at,updated_at FROM nodes WHERE id=$1`, id))
+}
+
+func (s *SQLStore) CreateNode(node Node) (Node, error) {
+	if strings.TrimSpace(node.Name) == "" {
+		node.Name = "node"
+	}
+	if node.FRPServerPort == 0 {
+		node.FRPServerPort = 7000
+	}
+	if node.TCPPortStart == 0 {
+		node.TCPPortStart = 20000
+	}
+	if node.TCPPortEnd == 0 {
+		node.TCPPortEnd = 29999
+	}
+	if node.UDPPortStart == 0 {
+		node.UDPPortStart = 30000
+	}
+	if node.UDPPortEnd == 0 {
+		node.UDPPortEnd = 39999
+	}
+	if node.Status == "" {
+		node.Status = "pending"
+	}
+	if node.BindToken == "" {
+		node.BindToken = fmt.Sprintf("node-bind-%d", time.Now().UnixNano())
+	}
+	if node.AgentToken == "" {
+		node.AgentToken = fmt.Sprintf("node-agent-%d", time.Now().UnixNano())
+	}
+	return scanNode(s.db.QueryRow(`INSERT INTO nodes (name,agent_url,agent_token,bind_token,public_url,frp_entry_domain,server_addr,frp_server_port,tcp_port_start,tcp_port_end,udp_port_start,udp_port_end,status)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+RETURNING id,name,coalesce(agent_url,''),agent_token,bind_token,coalesce(public_url,''),coalesce(frp_entry_domain,''),coalesce(server_addr,''),frp_server_port,tcp_port_start,tcp_port_end,udp_port_start,udp_port_end,status,last_seen_at,coalesce(last_error,''),created_at,updated_at`, node.Name, node.AgentURL, node.AgentToken, node.BindToken, node.PublicURL, node.FRPEntryDomain, node.ServerAddr, node.FRPServerPort, node.TCPPortStart, node.TCPPortEnd, node.UDPPortStart, node.UDPPortEnd, node.Status))
+}
+
+func (s *SQLStore) BindNode(req NodeBindRequest) (Node, error) {
+	now := time.Now()
+	res, err := s.db.Exec(`UPDATE nodes SET
+name=COALESCE(NULLIF($2,''),name),
+agent_url=COALESCE(NULLIF($3,''),agent_url),
+public_url=COALESCE(NULLIF($4,''),public_url),
+frp_entry_domain=COALESCE(NULLIF($5,''),frp_entry_domain),
+server_addr=COALESCE(NULLIF($6,''),server_addr),
+frp_server_port=CASE WHEN $7>0 THEN $7 ELSE frp_server_port END,
+tcp_port_start=CASE WHEN $8>0 THEN $8 ELSE tcp_port_start END,
+tcp_port_end=CASE WHEN $9>0 THEN $9 ELSE tcp_port_end END,
+udp_port_start=CASE WHEN $10>0 THEN $10 ELSE udp_port_start END,
+udp_port_end=CASE WHEN $11>0 THEN $11 ELSE udp_port_end END,
+status='online', last_error='', last_seen_at=$12, updated_at=$12
+WHERE bind_token=$1`, strings.TrimSpace(req.BindToken), strings.TrimSpace(req.Name), strings.TrimRight(strings.TrimSpace(req.AgentURL), "/"), strings.TrimRight(strings.TrimSpace(req.PublicURL), "/"), strings.TrimSpace(req.FRPEntryDomain), strings.TrimSpace(req.ServerAddr), req.FRPServerPort, req.TCPPortStart, req.TCPPortEnd, req.UDPPortStart, req.UDPPortEnd, now)
+	if err != nil {
+		return Node{}, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return Node{}, ErrUnauthorized
+	}
+	return scanNode(s.db.QueryRow(`SELECT id,name,coalesce(agent_url,''),agent_token,bind_token,coalesce(public_url,''),coalesce(frp_entry_domain,''),coalesce(server_addr,''),frp_server_port,tcp_port_start,tcp_port_end,udp_port_start,udp_port_end,status,last_seen_at,coalesce(last_error,''),created_at,updated_at FROM nodes WHERE bind_token=$1`, strings.TrimSpace(req.BindToken)))
+}
+
+func (s *SQLStore) UpdateNodeStatus(id int64, status string, lastError string) (Node, error) {
+	return scanNode(s.db.QueryRow(`UPDATE nodes SET status=$2,last_error=$3,last_seen_at=CASE WHEN $2='online' THEN now() ELSE last_seen_at END,updated_at=now() WHERE id=$1 RETURNING id,name,coalesce(agent_url,''),agent_token,bind_token,coalesce(public_url,''),coalesce(frp_entry_domain,''),coalesce(server_addr,''),frp_server_port,tcp_port_start,tcp_port_end,udp_port_start,udp_port_end,status,last_seen_at,coalesce(last_error,''),created_at,updated_at`, id, status, lastError))
+}
+
+func scanNode(scanner interface{ Scan(dest ...any) error }) (Node, error) {
+	var n Node
+	var seen sql.NullTime
+	err := scanner.Scan(&n.ID, &n.Name, &n.AgentURL, &n.AgentToken, &n.BindToken, &n.PublicURL, &n.FRPEntryDomain, &n.ServerAddr, &n.FRPServerPort, &n.TCPPortStart, &n.TCPPortEnd, &n.UDPPortStart, &n.UDPPortEnd, &n.Status, &seen, &n.LastError, &n.CreatedAt, &n.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Node{}, ErrNotFound
+		}
+		return Node{}, err
+	}
+	if seen.Valid {
+		n.LastSeenAt = &seen.Time
+	}
+	return n, nil
+}
+
 func (s *SQLStore) Settings() Settings {
 	get := func(k, d string) string {
 		var v string

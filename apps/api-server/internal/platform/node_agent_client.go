@@ -27,12 +27,17 @@ type CertificateInspectResult struct {
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
+func NewNodeAgentClient(baseURL, token string) *NodeAgentClient {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	return &NodeAgentClient{BaseURL: baseURL, Token: token, Client: &http.Client{Timeout: 2 * time.Minute}}
+}
+
 func NodeAgentClientFromEnv() *NodeAgentClient {
 	base := strings.TrimRight(strings.TrimSpace(os.Getenv("NODE_AGENT_URL")), "/")
 	if base == "" {
 		return nil
 	}
-	return &NodeAgentClient{BaseURL: base, Token: os.Getenv("NODE_AGENT_TOKEN"), Client: &http.Client{Timeout: 2 * time.Minute}}
+	return NewNodeAgentClient(base, os.Getenv("NODE_AGENT_TOKEN"))
 }
 
 func (c *NodeAgentClient) enabled() bool { return c != nil && strings.TrimSpace(c.BaseURL) != "" }

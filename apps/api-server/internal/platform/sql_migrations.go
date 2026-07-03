@@ -167,6 +167,29 @@ CREATE TABLE IF NOT EXISTS traffic_logs (
 );
 CREATE INDEX IF NOT EXISTS idx_traffic_user_time ON traffic_logs(user_id, recorded_at);
 
+
+CREATE TABLE IF NOT EXISTS nodes (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    agent_url TEXT,
+    agent_token TEXT NOT NULL,
+    bind_token TEXT NOT NULL UNIQUE,
+    public_url TEXT,
+    frp_entry_domain VARCHAR(255),
+    server_addr VARCHAR(255),
+    frp_server_port INTEGER NOT NULL DEFAULT 7000,
+    tcp_port_start INTEGER NOT NULL DEFAULT 20000,
+    tcp_port_end INTEGER NOT NULL DEFAULT 29999,
+    udp_port_start INTEGER NOT NULL DEFAULT 30000,
+    udp_port_end INTEGER NOT NULL DEFAULT 39999,
+    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    last_seen_at TIMESTAMPTZ,
+    last_error TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_nodes_status ON nodes(status);
+
 CREATE TABLE IF NOT EXISTS system_settings (
     key VARCHAR(128) PRIMARY KEY,
     value TEXT NOT NULL,
