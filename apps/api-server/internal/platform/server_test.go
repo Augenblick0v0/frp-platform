@@ -199,3 +199,26 @@ func TestAdminNodeCreateBindAndRemoteStatus(t *testing.T) {
 		t.Fatalf("expected node online, got %#v", store.Nodes()[0])
 	}
 }
+
+func TestClientTunnelsReturnsRuntimeFRPToken(t *testing.T) {
+	t.Setenv("FRP_TOKEN", "test-runtime-token")
+	s := NewServer(NewStore())
+	post(t, s, "/api/auth/send-email-code", map[string]any{"email": "token@example.com", "purpose": "register"}, "")
+	post(t, s, "/api/auth/register", map[string]any{"email": "token@example.com", "code": "123456", "password": "pass"}, "")
+	login := post(t, s, "/api/auth/login", map[string]any{"email": "token@example.com", "password": "pass"}, "")
+	token := login["access_token"].(string)
+	rr := request(t, s, "GET", "/api/client/tunnels", nil, token)
+	if rr.Code != 200 {
+		t.Fatalf("client tunnels status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var out struct {
+		Success bool           `json:"success"`
+		Data    map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Data["token"] != "test-runtime-token" {
+		t.Fatalf("expected runtime token, got %#v", out.Data["token"])
+	}
+}

@@ -17,6 +17,7 @@ services:
 
   frps:
     image: snowdreamtech/frps:latest
+    entrypoint: ["/usr/bin/frps"]
     container_name: frp-node-frps
     command: ["-c", "/etc/frp/frps.toml"]
     ports:

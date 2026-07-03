@@ -296,7 +296,7 @@ func (s *Server) clientTraffic(w http.ResponseWriter, r *http.Request, u User) {
 }
 func (s *Server) clientTunnels(w http.ResponseWriter, r *http.Request, u User) {
 	st := s.store.Settings()
-	ok(w, map[string]any{"server_addr": st.ServerAddr, "server_port": st.FRPServerPort, "token": "runtime-token-placeholder", "tunnels": s.store.Tunnels(u.ID)})
+	ok(w, map[string]any{"server_addr": st.ServerAddr, "server_port": st.FRPServerPort, "token": getenv("FRP_TOKEN", "change-me"), "tunnels": s.store.Tunnels(u.ID)})
 }
 func (s *Server) adminDashboard(w http.ResponseWriter, r *http.Request) {
 	all := s.store.AllTunnels()
