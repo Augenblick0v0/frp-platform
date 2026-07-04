@@ -1,10 +1,13 @@
 package clientcore
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestManagerWriteConfigAndLogs(t *testing.T) {
@@ -32,5 +35,33 @@ func TestManagerWriteConfigAndLogs(t *testing.T) {
 	}
 	if logs != "hello log" {
 		t.Fatalf("logs=%q", logs)
+	}
+}
+
+func TestLocalBenchmarkProbesReturnSpeedMetrics(t *testing.T) {
+	for _, typ := range []string{"http", "tcp", "udp"} {
+		t.Run(typ, func(t *testing.T) {
+			bench, err := startBenchmarkService(typ)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer bench.Close()
+			public := "127.0.0.1:" + strconv.Itoa(bench.port)
+			if typ == "http" {
+				public = "http://" + public
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			got, err := runProtocolProbe(ctx, typ, public, 32*1024, 32*1024)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.BytesIn <= 0 || got.BytesOut <= 0 {
+				t.Fatalf("expected traffic bytes, got %#v", got)
+			}
+			if got.DownloadAverageKbps <= 0 || got.UploadAverageKbps <= 0 || got.LatencyMs < 0 {
+				t.Fatalf("expected speed metrics, got %#v", got)
+			}
+		})
 	}
 }

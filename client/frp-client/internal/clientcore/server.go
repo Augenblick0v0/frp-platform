@@ -31,6 +31,7 @@ func (s *LocalServer) Handler() http.Handler {
 	})
 	mux.HandleFunc("/api/config/render", s.renderConfig)
 	mux.HandleFunc("/api/config/sync", s.syncConfig)
+	mux.HandleFunc("/api/speed-tests/run", s.runSpeedTest)
 	mux.HandleFunc("/api/frpc/start", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(405)
@@ -95,6 +96,33 @@ func (s *LocalServer) reportTraffic(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(resp.StatusCode)
 	}
 	_ = json.NewEncoder(w).Encode(out)
+}
+
+func (s *LocalServer) runSpeedTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(405)
+		return
+	}
+	var in SpeedTestRunRequest
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, 400, err)
+		return
+	}
+	timeout := in.DurationSeconds + 30
+	if timeout < 45 {
+		timeout = 45
+	}
+	if timeout > 120 {
+		timeout = 120
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(timeout)*time.Second)
+	defer cancel()
+	result, err := s.manager.RunSpeedTest(ctx, in)
+	if err != nil {
+		writeError(w, 400, err)
+		return
+	}
+	writeJSON(w, result)
 }
 
 func (s *LocalServer) renderConfig(w http.ResponseWriter, r *http.Request) {

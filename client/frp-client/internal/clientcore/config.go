@@ -8,23 +8,27 @@ import (
 )
 
 type Tunnel struct {
-	ID            int64    `json:"id"`
-	Name          string   `json:"name"`
-	Type          string   `json:"type"`
-	LocalHost     string   `json:"local_host"`
-	LocalPort     int      `json:"local_port"`
-	RemotePort    int      `json:"remote_port,omitempty"`
-	Domain        string   `json:"domain,omitempty"`
-	UseHTTPS      bool     `json:"use_https"`
-	Status        string   `json:"status"`
-	CustomDomains []string `json:"custom_domains,omitempty"`
+	ID                          int64    `json:"id"`
+	Name                        string   `json:"name"`
+	Type                        string   `json:"type"`
+	LocalHost                   string   `json:"local_host"`
+	LocalPort                   int      `json:"local_port"`
+	RemotePort                  int      `json:"remote_port,omitempty"`
+	Domain                      string   `json:"domain,omitempty"`
+	UseHTTPS                    bool     `json:"use_https"`
+	BandwidthLimitKbps          int      `json:"bandwidth_limit_kbps"`
+	EffectiveBandwidthLimitKbps int      `json:"effective_bandwidth_limit_kbps"`
+	SpeedTest                   bool     `json:"speed_test"`
+	Status                      string   `json:"status"`
+	CustomDomains               []string `json:"custom_domains,omitempty"`
 }
 
 type ServerConfig struct {
-	ServerAddr string   `json:"server_addr"`
-	ServerPort int      `json:"server_port"`
-	Token      string   `json:"token"`
-	Tunnels    []Tunnel `json:"tunnels"`
+	ServerAddr         string   `json:"server_addr"`
+	ServerPort         int      `json:"server_port"`
+	Token              string   `json:"token"`
+	BandwidthLimitKbps int      `json:"bandwidth_limit_kbps"`
+	Tunnels            []Tunnel `json:"tunnels"`
 }
 
 func RenderFRPCConfig(cfg ServerConfig) (string, error) {
@@ -62,6 +66,16 @@ func RenderFRPCConfig(cfg ServerConfig) (string, error) {
 		fmt.Fprintf(&b, "type = %q\n", proxyType)
 		fmt.Fprintf(&b, "localIP = %q\n", t.LocalHost)
 		fmt.Fprintf(&b, "localPort = %d\n", t.LocalPort)
+		limit := t.EffectiveBandwidthLimitKbps
+		if limit == 0 && t.BandwidthLimitKbps > 0 {
+			limit = t.BandwidthLimitKbps
+		}
+		if limit == 0 && cfg.BandwidthLimitKbps > 0 {
+			limit = cfg.BandwidthLimitKbps
+		}
+		if limit > 0 {
+			fmt.Fprintf(&b, "transport.bandwidthLimit = %q\n", frpcBandwidthLimit(limit))
+		}
 		switch strings.ToLower(t.Type) {
 		case "tcp", "udp":
 			fmt.Fprintf(&b, "remotePort = %d\n", t.RemotePort)
@@ -75,6 +89,14 @@ func RenderFRPCConfig(cfg ServerConfig) (string, error) {
 		fmt.Fprintf(&b, "\n")
 	}
 	return b.String(), nil
+}
+
+func frpcBandwidthLimit(kbps int) string {
+	kbytes := (kbps + 7) / 8
+	if kbytes < 1 {
+		kbytes = 1
+	}
+	return fmt.Sprintf("%dKB", kbytes)
 }
 
 func validateTunnel(t Tunnel) error {

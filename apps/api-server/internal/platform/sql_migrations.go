@@ -121,6 +121,9 @@ CREATE TABLE IF NOT EXISTS tunnels (
     remote_port INTEGER,
     domain VARCHAR(255) UNIQUE,
     use_https BOOLEAN NOT NULL DEFAULT false,
+    bandwidth_limit_kbps INTEGER NOT NULL DEFAULT 0,
+    speed_test BOOLEAN NOT NULL DEFAULT false,
+    expires_at TIMESTAMPTZ,
     status VARCHAR(32) NOT NULL DEFAULT 'created',
     public_url TEXT,
     error_message TEXT,
@@ -129,6 +132,10 @@ CREATE TABLE IF NOT EXISTS tunnels (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_tunnels_user ON tunnels(user_id);
+ALTER TABLE IF EXISTS tunnels ADD COLUMN IF NOT EXISTS bandwidth_limit_kbps INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE IF EXISTS tunnels ADD COLUMN IF NOT EXISTS speed_test BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE IF EXISTS tunnels ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_tunnels_speed_test_expires ON tunnels(speed_test, expires_at);
 
 CREATE TABLE IF NOT EXISTS port_allocations (
     id BIGSERIAL PRIMARY KEY,

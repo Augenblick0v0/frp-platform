@@ -214,7 +214,10 @@ func (s *Store) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
 	if req.Name == "" || req.LocalHost == "" || req.LocalPort <= 0 {
 		return Tunnel{}, fmt.Errorf("invalid tunnel request")
 	}
-	t := Tunnel{ID: s.nextTunnelID, UserID: userID, Name: req.Name, Type: typ, LocalHost: req.LocalHost, LocalPort: req.LocalPort, UseHTTPS: req.UseHTTPS, CreatedAt: time.Now()}
+	if err := validateTunnelBandwidth(sub, req.BandwidthKbps); err != nil {
+		return Tunnel{}, err
+	}
+	t := Tunnel{ID: s.nextTunnelID, UserID: userID, Name: req.Name, Type: typ, LocalHost: req.LocalHost, LocalPort: req.LocalPort, UseHTTPS: req.UseHTTPS, BandwidthKbps: req.BandwidthKbps, CreatedAt: time.Now()}
 	s.nextTunnelID++
 	switch typ {
 	case "tcp":
@@ -266,8 +269,102 @@ func (s *Store) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
 	default:
 		return Tunnel{}, fmt.Errorf("unsupported tunnel type")
 	}
+	t.EffectiveBandwidthKbps = effectiveBandwidth(sub.BandwidthKbps, t.BandwidthKbps)
 	s.tunnels[t.ID] = t
 	return t, nil
+}
+
+func (s *Store) CreateSpeedTestTunnel(userID int64, req SpeedTestTunnelRequest) (SpeedTestTunnel, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sub, ok := s.subscriptions[userID]
+	if !ok || sub.Status != "active" || time.Now().After(sub.ExpiresAt) {
+		return SpeedTestTunnel{}, ErrForbidden
+	}
+	if sub.TrafficLimitBytes > 0 && sub.TrafficUsedBytes >= sub.TrafficLimitBytes {
+		return SpeedTestTunnel{}, ErrForbidden
+	}
+	typ := strings.ToLower(strings.TrimSpace(req.Type))
+	if req.LocalHost == "" || req.LocalPort <= 0 {
+		return SpeedTestTunnel{}, fmt.Errorf("invalid speed test request")
+	}
+	if err := validateTunnelBandwidth(sub, req.BandwidthKbps); err != nil {
+		return SpeedTestTunnel{}, err
+	}
+	expires := time.Now().Add(15 * time.Minute)
+	t := Tunnel{ID: s.nextTunnelID, UserID: userID, Name: fmt.Sprintf("__speedtest_%s_%d", typ, s.nextTunnelID), Type: typ, LocalHost: req.LocalHost, LocalPort: req.LocalPort, BandwidthKbps: req.BandwidthKbps, EffectiveBandwidthKbps: effectiveBandwidth(sub.BandwidthKbps, req.BandwidthKbps), SpeedTest: true, ExpiresAt: &expires, CreatedAt: time.Now()}
+	s.nextTunnelID++
+	switch typ {
+	case "tcp":
+		if !sub.AllowTCP {
+			return SpeedTestTunnel{}, ErrForbidden
+		}
+		port, err := allocate(s.usedTCP, s.settings.TCPPortStart, s.settings.TCPPortEnd)
+		if err != nil {
+			return SpeedTestTunnel{}, err
+		}
+		t.RemotePort = port
+		t.Status = "active"
+		t.PublicURL = fmt.Sprintf("%s:%d", s.settings.ServerAddr, port)
+	case "udp":
+		if !sub.AllowUDP {
+			return SpeedTestTunnel{}, ErrForbidden
+		}
+		port, err := allocate(s.usedUDP, s.settings.UDPPortStart, s.settings.UDPPortEnd)
+		if err != nil {
+			return SpeedTestTunnel{}, err
+		}
+		t.RemotePort = port
+		t.Status = "active"
+		t.PublicURL = fmt.Sprintf("%s:%d", s.settings.ServerAddr, port)
+	case "http", "https":
+		if typ == "http" && !sub.AllowHTTP {
+			return SpeedTestTunnel{}, ErrForbidden
+		}
+		if typ == "https" && !sub.AllowHTTPS {
+			return SpeedTestTunnel{}, ErrForbidden
+		}
+		domain := fmt.Sprintf("speed-%d.%s", t.ID, strings.TrimPrefix(s.settings.FRPEntryDomain, "*."))
+		if _, exists := s.domains[domain]; exists {
+			return SpeedTestTunnel{}, ErrConflict
+		}
+		s.domains[domain] = t.ID
+		t.Domain = domain
+		t.UseHTTPS = typ == "https"
+		t.Status = "active"
+		if typ == "https" {
+			t.PublicURL = "https://" + domain
+		} else {
+			t.PublicURL = "http://" + domain
+		}
+	default:
+		return SpeedTestTunnel{}, fmt.Errorf("unsupported tunnel type")
+	}
+	s.tunnels[t.ID] = t
+	return speedTestTunnelFromTunnel(t), nil
+}
+
+func (s *Store) FinishSpeedTestTunnel(userID int64, tunnelID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tunnels[tunnelID]
+	if !ok || t.UserID != userID || !t.SpeedTest {
+		return ErrNotFound
+	}
+	t.Status = "deleted"
+	s.tunnels[tunnelID] = t
+	if t.RemotePort > 0 {
+		if t.Type == "tcp" {
+			delete(s.usedTCP, t.RemotePort)
+		}
+		if t.Type == "udp" {
+			delete(s.usedUDP, t.RemotePort)
+		}
+	}
+	if t.Domain != "" {
+		delete(s.domains, t.Domain)
+	}
+	return nil
 }
 
 func (s *Store) checkTunnelLimitsLocked(userID int64, sub Subscription, typ string) error {
@@ -328,6 +425,34 @@ func allocate(used map[int]bool, start, end int) (int, error) {
 		}
 	}
 	return 0, fmt.Errorf("no free port")
+}
+
+func validateTunnelBandwidth(sub Subscription, tunnelLimit int) error {
+	if tunnelLimit < 0 {
+		return fmt.Errorf("bandwidth_limit_kbps must be >= 0")
+	}
+	if tunnelLimit > 0 && sub.BandwidthKbps > 0 && tunnelLimit > sub.BandwidthKbps {
+		return ErrForbidden
+	}
+	if tunnelLimit > 0 && sub.BandwidthKbps == 0 {
+		return ErrForbidden
+	}
+	return nil
+}
+
+func effectiveBandwidth(packageLimit int, tunnelLimit int) int {
+	if tunnelLimit > 0 {
+		return tunnelLimit
+	}
+	return packageLimit
+}
+
+func speedTestTunnelFromTunnel(t Tunnel) SpeedTestTunnel {
+	expires := time.Now()
+	if t.ExpiresAt != nil {
+		expires = *t.ExpiresAt
+	}
+	return SpeedTestTunnel{ID: t.ID, Type: t.Type, LocalHost: t.LocalHost, LocalPort: t.LocalPort, RemotePort: t.RemotePort, Domain: t.Domain, PublicURL: t.PublicURL, EffectiveBandwidthKbps: t.EffectiveBandwidthKbps, ExpiresAt: expires}
 }
 
 func (s *Store) Tunnels(userID int64) []Tunnel {

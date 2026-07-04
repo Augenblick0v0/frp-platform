@@ -224,12 +224,15 @@ func (s *SQLStore) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
 	if req.Name == "" || req.LocalHost == "" || req.LocalPort <= 0 {
 		return Tunnel{}, fmt.Errorf("invalid tunnel request")
 	}
+	if err := validateTunnelBandwidth(sub, req.BandwidthKbps); err != nil {
+		return Tunnel{}, err
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return Tunnel{}, err
 	}
 	defer tx.Rollback()
-	t := Tunnel{UserID: userID, Name: req.Name, Type: typ, LocalHost: req.LocalHost, LocalPort: req.LocalPort, UseHTTPS: req.UseHTTPS, CreatedAt: time.Now()}
+	t := Tunnel{UserID: userID, Name: req.Name, Type: typ, LocalHost: req.LocalHost, LocalPort: req.LocalPort, UseHTTPS: req.UseHTTPS, BandwidthKbps: req.BandwidthKbps, EffectiveBandwidthKbps: effectiveBandwidth(sub.BandwidthKbps, req.BandwidthKbps), CreatedAt: time.Now()}
 	switch typ {
 	case "tcp":
 		if !sub.AllowTCP {
@@ -276,7 +279,7 @@ func (s *SQLStore) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
 	default:
 		return Tunnel{}, fmt.Errorf("unsupported tunnel type")
 	}
-	err = tx.QueryRow(`INSERT INTO tunnels (user_id,name,type,local_host,local_port,remote_port,domain,use_https,status,public_url) VALUES ($1,$2,$3,$4,$5,NULLIF($6,0),NULLIF($7,''),$8,$9,$10) RETURNING id,created_at`, userID, t.Name, t.Type, t.LocalHost, t.LocalPort, t.RemotePort, t.Domain, t.UseHTTPS, t.Status, t.PublicURL).Scan(&t.ID, &t.CreatedAt)
+	err = tx.QueryRow(`INSERT INTO tunnels (user_id,name,type,local_host,local_port,remote_port,domain,use_https,bandwidth_limit_kbps,status,public_url) VALUES ($1,$2,$3,$4,$5,NULLIF($6,0),NULLIF($7,''),$8,$9,$10,$11) RETURNING id,created_at`, userID, t.Name, t.Type, t.LocalHost, t.LocalPort, t.RemotePort, t.Domain, t.UseHTTPS, t.BandwidthKbps, t.Status, t.PublicURL).Scan(&t.ID, &t.CreatedAt)
 	if err != nil {
 		if isUnique(err) {
 			return Tunnel{}, ErrConflict
@@ -293,6 +296,109 @@ func (s *SQLStore) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
 		return Tunnel{}, err
 	}
 	return t, nil
+}
+
+func (s *SQLStore) CreateSpeedTestTunnel(userID int64, req SpeedTestTunnelRequest) (SpeedTestTunnel, error) {
+	sub, err := s.Subscription(userID)
+	if err != nil || sub.Status != "active" {
+		return SpeedTestTunnel{}, ErrForbidden
+	}
+	if sub.TrafficLimitBytes > 0 && sub.TrafficUsedBytes >= sub.TrafficLimitBytes {
+		return SpeedTestTunnel{}, ErrForbidden
+	}
+	typ := strings.ToLower(strings.TrimSpace(req.Type))
+	if req.LocalHost == "" || req.LocalPort <= 0 {
+		return SpeedTestTunnel{}, fmt.Errorf("invalid speed test request")
+	}
+	if err := validateTunnelBandwidth(sub, req.BandwidthKbps); err != nil {
+		return SpeedTestTunnel{}, err
+	}
+	st := s.Settings()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return SpeedTestTunnel{}, err
+	}
+	defer tx.Rollback()
+	expires := time.Now().Add(15 * time.Minute)
+	t := Tunnel{UserID: userID, Type: typ, LocalHost: req.LocalHost, LocalPort: req.LocalPort, BandwidthKbps: req.BandwidthKbps, EffectiveBandwidthKbps: effectiveBandwidth(sub.BandwidthKbps, req.BandwidthKbps), SpeedTest: true, ExpiresAt: &expires, Status: "active"}
+	switch typ {
+	case "tcp":
+		if !sub.AllowTCP {
+			return SpeedTestTunnel{}, ErrForbidden
+		}
+		port, err := s.allocateSQLPort(tx, "tcp", st.TCPPortStart, st.TCPPortEnd)
+		if err != nil {
+			return SpeedTestTunnel{}, err
+		}
+		t.RemotePort = port
+		t.PublicURL = fmt.Sprintf("%s:%d", st.ServerAddr, port)
+	case "udp":
+		if !sub.AllowUDP {
+			return SpeedTestTunnel{}, ErrForbidden
+		}
+		port, err := s.allocateSQLPort(tx, "udp", st.UDPPortStart, st.UDPPortEnd)
+		if err != nil {
+			return SpeedTestTunnel{}, err
+		}
+		t.RemotePort = port
+		t.PublicURL = fmt.Sprintf("%s:%d", st.ServerAddr, port)
+	case "http", "https":
+		if typ == "http" && !sub.AllowHTTP {
+			return SpeedTestTunnel{}, ErrForbidden
+		}
+		if typ == "https" && !sub.AllowHTTPS {
+			return SpeedTestTunnel{}, ErrForbidden
+		}
+		t.Domain = fmt.Sprintf("speed-%d.%s", time.Now().UnixNano(), strings.TrimPrefix(st.FRPEntryDomain, "*."))
+		t.UseHTTPS = typ == "https"
+		if typ == "https" {
+			t.PublicURL = "https://" + t.Domain
+		} else {
+			t.PublicURL = "http://" + t.Domain
+		}
+	default:
+		return SpeedTestTunnel{}, fmt.Errorf("unsupported tunnel type")
+	}
+	t.Name = fmt.Sprintf("__speedtest_%s_%d", typ, time.Now().UnixNano())
+	err = tx.QueryRow(`INSERT INTO tunnels (user_id,name,type,local_host,local_port,remote_port,domain,use_https,bandwidth_limit_kbps,speed_test,expires_at,status,public_url) VALUES ($1,$2,$3,$4,$5,NULLIF($6,0),NULLIF($7,''),$8,$9,true,$10,$11,$12) RETURNING id,created_at`, userID, t.Name, t.Type, t.LocalHost, t.LocalPort, t.RemotePort, t.Domain, t.UseHTTPS, t.BandwidthKbps, expires, t.Status, t.PublicURL).Scan(&t.ID, &t.CreatedAt)
+	if err != nil {
+		if isUnique(err) {
+			return SpeedTestTunnel{}, ErrConflict
+		}
+		return SpeedTestTunnel{}, err
+	}
+	if t.RemotePort != 0 {
+		if _, err := tx.Exec(`UPDATE port_allocations SET tunnel_id=$1,user_id=$2 WHERE protocol=$3 AND port=$4`, t.ID, userID, typ, t.RemotePort); err != nil {
+			return SpeedTestTunnel{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return SpeedTestTunnel{}, err
+	}
+	return speedTestTunnelFromTunnel(t), nil
+}
+
+func (s *SQLStore) FinishSpeedTestTunnel(userID int64, tunnelID int64) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var t Tunnel
+	var expires sql.NullTime
+	err = tx.QueryRow(`SELECT id,user_id,type,coalesce(remote_port,0),coalesce(domain,''),speed_test,expires_at FROM tunnels WHERE id=$1 FOR UPDATE`, tunnelID).Scan(&t.ID, &t.UserID, &t.Type, &t.RemotePort, &t.Domain, &t.SpeedTest, &expires)
+	if err != nil || t.UserID != userID || !t.SpeedTest {
+		return ErrNotFound
+	}
+	if _, err := tx.Exec(`UPDATE tunnels SET status='deleted', updated_at=now() WHERE id=$1`, tunnelID); err != nil {
+		return err
+	}
+	if t.RemotePort > 0 {
+		if _, err := tx.Exec(`DELETE FROM port_allocations WHERE protocol=$1 AND port=$2`, t.Type, t.RemotePort); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *SQLStore) allocateSQLPort(tx *sql.Tx, protocol string, start, end int) (int, error) {
@@ -312,7 +418,7 @@ func (s *SQLStore) Tunnels(userID int64) []Tunnel {
 }
 func (s *SQLStore) AllTunnels() []Tunnel { return s.queryTunnels(`ORDER BY id DESC`) }
 func (s *SQLStore) queryTunnels(suffix string, args ...any) []Tunnel {
-	rows, err := s.db.Query(`SELECT id,user_id,name,type,local_host,local_port,coalesce(remote_port,0),coalesce(domain,''),use_https,status,coalesce(public_url,''),coalesce(error_message,''),created_at FROM tunnels `+suffix, args...)
+	rows, err := s.db.Query(`SELECT id,user_id,name,type,local_host,local_port,coalesce(remote_port,0),coalesce(domain,''),use_https,bandwidth_limit_kbps,speed_test,expires_at,status,coalesce(public_url,''),coalesce(error_message,''),created_at FROM tunnels `+suffix, args...)
 	if err != nil {
 		return nil
 	}
@@ -320,7 +426,11 @@ func (s *SQLStore) queryTunnels(suffix string, args ...any) []Tunnel {
 	var out []Tunnel
 	for rows.Next() {
 		var t Tunnel
-		_ = rows.Scan(&t.ID, &t.UserID, &t.Name, &t.Type, &t.LocalHost, &t.LocalPort, &t.RemotePort, &t.Domain, &t.UseHTTPS, &t.Status, &t.PublicURL, &t.ErrorMessage, &t.CreatedAt)
+		var expires sql.NullTime
+		_ = rows.Scan(&t.ID, &t.UserID, &t.Name, &t.Type, &t.LocalHost, &t.LocalPort, &t.RemotePort, &t.Domain, &t.UseHTTPS, &t.BandwidthKbps, &t.SpeedTest, &expires, &t.Status, &t.PublicURL, &t.ErrorMessage, &t.CreatedAt)
+		if expires.Valid {
+			t.ExpiresAt = &expires.Time
+		}
 		out = append(out, t)
 	}
 	return out

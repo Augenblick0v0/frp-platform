@@ -65,19 +65,23 @@ type RedeemCode struct {
 }
 
 type Tunnel struct {
-	ID           int64     `json:"id"`
-	UserID       int64     `json:"user_id"`
-	Name         string    `json:"name"`
-	Type         string    `json:"type"`
-	LocalHost    string    `json:"local_host"`
-	LocalPort    int       `json:"local_port"`
-	RemotePort   int       `json:"remote_port,omitempty"`
-	Domain       string    `json:"domain,omitempty"`
-	UseHTTPS     bool      `json:"use_https"`
-	Status       string    `json:"status"`
-	PublicURL    string    `json:"public_url"`
-	ErrorMessage string    `json:"error_message,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID                     int64      `json:"id"`
+	UserID                 int64      `json:"user_id"`
+	Name                   string     `json:"name"`
+	Type                   string     `json:"type"`
+	LocalHost              string     `json:"local_host"`
+	LocalPort              int        `json:"local_port"`
+	RemotePort             int        `json:"remote_port,omitempty"`
+	Domain                 string     `json:"domain,omitempty"`
+	UseHTTPS               bool       `json:"use_https"`
+	BandwidthKbps          int        `json:"bandwidth_limit_kbps"`
+	EffectiveBandwidthKbps int        `json:"effective_bandwidth_limit_kbps"`
+	SpeedTest              bool       `json:"speed_test"`
+	ExpiresAt              *time.Time `json:"expires_at,omitempty"`
+	Status                 string     `json:"status"`
+	PublicURL              string     `json:"public_url"`
+	ErrorMessage           string     `json:"error_message,omitempty"`
+	CreatedAt              time.Time  `json:"created_at"`
 }
 
 type Settings struct {
@@ -131,6 +135,25 @@ type TrafficReport struct {
 	TunnelID int64 `json:"tunnel_id"`
 	BytesIn  int64 `json:"bytes_in"`
 	BytesOut int64 `json:"bytes_out"`
+}
+
+type SpeedTestTunnelRequest struct {
+	Type          string `json:"type"`
+	LocalHost     string `json:"local_host"`
+	LocalPort     int    `json:"local_port"`
+	BandwidthKbps int    `json:"bandwidth_limit_kbps"`
+}
+
+type SpeedTestTunnel struct {
+	ID                     int64     `json:"id"`
+	Type                   string    `json:"type"`
+	LocalHost              string    `json:"local_host"`
+	LocalPort              int       `json:"local_port"`
+	RemotePort             int       `json:"remote_port,omitempty"`
+	Domain                 string    `json:"domain,omitempty"`
+	PublicURL              string    `json:"public_url"`
+	EffectiveBandwidthKbps int       `json:"effective_bandwidth_limit_kbps"`
+	ExpiresAt              time.Time `json:"expires_at"`
 }
 
 type TrafficSummary struct {

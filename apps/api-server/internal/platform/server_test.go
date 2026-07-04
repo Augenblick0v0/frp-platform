@@ -77,6 +77,94 @@ func TestTrafficReportingAndPlanLimit(t *testing.T) {
 	}
 }
 
+func TestTunnelBandwidthOverrideCannotExceedPlanLimit(t *testing.T) {
+	store := NewStore()
+	s := NewServer(store)
+	post(t, s, "/api/auth/send-email-code", map[string]any{"email": "speed@example.com", "purpose": "register"}, "")
+	post(t, s, "/api/auth/register", map[string]any{"email": "speed@example.com", "code": "123456", "password": "pass"}, "")
+	login := post(t, s, "/api/auth/login", map[string]any{"email": "speed@example.com", "password": "pass"}, "")
+	token := login["access_token"].(string)
+	plan, err := store.CreatePlan(Plan{Name: "Speed", DurationDays: 1, TrafficLimitBytes: 1024 * 1024 * 1024, BandwidthKbps: 512, MaxTunnels: 3, MaxTCPTunnels: 3, AllowTCP: true, Status: "active"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	codes, err := store.CreateRedeemCodes(plan.ID, 1, "SPD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	post(t, s, "/api/user/redeem", map[string]any{"code": codes[0].Code}, token)
+	rr := request(t, s, "POST", "/api/tunnels", map[string]any{"name": "too-fast", "type": "tcp", "local_host": "127.0.0.1", "local_port": 22, "bandwidth_limit_kbps": 1024}, token)
+	if rr.Code != 403 {
+		t.Fatalf("expected too-fast tunnel 403, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	created := post(t, s, "/api/tunnels", map[string]any{"name": "limited", "type": "tcp", "local_host": "127.0.0.1", "local_port": 22, "bandwidth_limit_kbps": 256}, token)
+	if created["bandwidth_limit_kbps"].(float64) != 256 {
+		t.Fatalf("unexpected tunnel bandwidth %#v", created)
+	}
+}
+
+func TestClientTunnelsReturnsEffectiveBandwidthLimit(t *testing.T) {
+	store := NewStore()
+	s := NewServer(store)
+	post(t, s, "/api/auth/send-email-code", map[string]any{"email": "client-speed@example.com", "purpose": "register"}, "")
+	post(t, s, "/api/auth/register", map[string]any{"email": "client-speed@example.com", "code": "123456", "password": "pass"}, "")
+	login := post(t, s, "/api/auth/login", map[string]any{"email": "client-speed@example.com", "password": "pass"}, "")
+	token := login["access_token"].(string)
+	plan, err := store.CreatePlan(Plan{Name: "Client Speed", DurationDays: 1, TrafficLimitBytes: 1024 * 1024 * 1024, BandwidthKbps: 512, MaxTunnels: 3, MaxTCPTunnels: 3, AllowTCP: true, Status: "active"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	codes, err := store.CreateRedeemCodes(plan.ID, 1, "CSPD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	post(t, s, "/api/user/redeem", map[string]any{"code": codes[0].Code}, token)
+	post(t, s, "/api/tunnels", map[string]any{"name": "limited", "type": "tcp", "local_host": "127.0.0.1", "local_port": 22, "bandwidth_limit_kbps": 256}, token)
+	rr := request(t, s, "GET", "/api/client/tunnels", nil, token)
+	if rr.Code != 200 {
+		t.Fatalf("client tunnels status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var out struct {
+		Success bool `json:"success"`
+		Data    struct {
+			BandwidthLimitKbps int      `json:"bandwidth_limit_kbps"`
+			Tunnels            []Tunnel `json:"tunnels"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Data.BandwidthLimitKbps != 512 {
+		t.Fatalf("expected package limit 512, got %d", out.Data.BandwidthLimitKbps)
+	}
+	if len(out.Data.Tunnels) != 1 || out.Data.Tunnels[0].EffectiveBandwidthKbps != 256 {
+		t.Fatalf("unexpected tunnels %#v", out.Data.Tunnels)
+	}
+}
+
+func TestSpeedTestTunnelLifecycleAndTrafficAccounting(t *testing.T) {
+	store := NewStore()
+	s := NewServer(store)
+	post(t, s, "/api/auth/send-email-code", map[string]any{"email": "speedtest@example.com", "purpose": "register"}, "")
+	post(t, s, "/api/auth/register", map[string]any{"email": "speedtest@example.com", "code": "123456", "password": "pass"}, "")
+	login := post(t, s, "/api/auth/login", map[string]any{"email": "speedtest@example.com", "password": "pass"}, "")
+	token := login["access_token"].(string)
+	post(t, s, "/api/user/redeem", map[string]any{"code": "DEMO-PLAN-2026"}, token)
+	created := post(t, s, "/api/speed-tests/tunnels", map[string]any{"type": "tcp", "local_host": "127.0.0.1", "local_port": 18080, "bandwidth_limit_kbps": 512}, token)
+	id := int64(created["id"].(float64))
+	if created["effective_bandwidth_limit_kbps"].(float64) != 512 {
+		t.Fatalf("unexpected speed test tunnel %#v", created)
+	}
+	summary := post(t, s, "/api/client/traffic", map[string]any{"reports": []map[string]any{{"tunnel_id": id, "bytes_in": 1000, "bytes_out": 2000}}}, token)
+	if summary["traffic_used_bytes"].(float64) != 3000 {
+		t.Fatalf("unexpected traffic summary %#v", summary)
+	}
+	rr := request(t, s, "POST", fmt.Sprintf("/api/speed-tests/%d/finish", id), nil, token)
+	if rr.Code != 200 {
+		t.Fatalf("finish status=%d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 func request(t *testing.T, s *Server, method, path string, body map[string]any, token string) *httptest.ResponseRecorder {
 	t.Helper()
 	b, _ := json.Marshal(body)

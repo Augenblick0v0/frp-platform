@@ -51,6 +51,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/user/purchase-info", s.auth(s.purchaseInfo))
 	s.mux.HandleFunc("/api/user/traffic", s.auth(s.userTraffic))
 	s.mux.HandleFunc("/api/tunnels", s.auth(s.tunnels))
+	s.mux.HandleFunc("/api/speed-tests/tunnels", s.auth(s.createSpeedTestTunnel))
+	s.mux.HandleFunc("/api/speed-tests/", s.auth(s.finishSpeedTestTunnel))
 	s.mux.HandleFunc("/api/client/heartbeat", s.auth(s.clientHeartbeat))
 	s.mux.HandleFunc("/api/client/tunnels", s.auth(s.clientTunnels))
 	s.mux.HandleFunc("/api/client/traffic", s.auth(s.clientTraffic))
@@ -296,7 +298,63 @@ func (s *Server) clientTraffic(w http.ResponseWriter, r *http.Request, u User) {
 }
 func (s *Server) clientTunnels(w http.ResponseWriter, r *http.Request, u User) {
 	st := s.store.Settings()
-	ok(w, map[string]any{"server_addr": st.ServerAddr, "server_port": st.FRPServerPort, "token": getenv("FRP_TOKEN", "change-me"), "tunnels": s.store.Tunnels(u.ID)})
+	sub, err := s.store.Subscription(u.ID)
+	bandwidth := 0
+	if err == nil && sub.Status == "active" {
+		bandwidth = sub.BandwidthKbps
+	}
+	tunnels := s.store.Tunnels(u.ID)
+	for i := range tunnels {
+		tunnels[i].EffectiveBandwidthKbps = effectiveBandwidth(bandwidth, tunnels[i].BandwidthKbps)
+	}
+	ok(w, map[string]any{"server_addr": st.ServerAddr, "server_port": st.FRPServerPort, "token": getenv("FRP_TOKEN", "change-me"), "bandwidth_limit_kbps": bandwidth, "tunnels": tunnels})
+}
+
+func (s *Server) createSpeedTestTunnel(w http.ResponseWriter, r *http.Request, u User) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(405)
+		return
+	}
+	var in SpeedTestTunnelRequest
+	if !decode(w, r, &in) {
+		return
+	}
+	t, err := s.store.CreateSpeedTestTunnel(u.ID, in)
+	if err != nil {
+		handleErr(w, err)
+		return
+	}
+	ok(w, t)
+}
+
+func (s *Server) finishSpeedTestTunnel(w http.ResponseWriter, r *http.Request, u User) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(405)
+		return
+	}
+	id, action, okPath := parseSpeedTestAction(r.URL.Path)
+	if !okPath || action != "finish" {
+		fail(w, 404, "SPEED_TEST_ACTION_NOT_FOUND", "speed test action not found")
+		return
+	}
+	if err := s.store.FinishSpeedTestTunnel(u.ID, id); err != nil {
+		handleErr(w, err)
+		return
+	}
+	ok(w, map[string]any{"finished": true, "id": id})
+}
+
+func parseSpeedTestAction(path string) (int64, string, bool) {
+	rest := strings.TrimPrefix(path, "/api/speed-tests/")
+	if rest == path || rest == "" {
+		return 0, "", false
+	}
+	parts := strings.Split(strings.Trim(rest, "/"), "/")
+	id, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || id <= 0 || len(parts) < 2 {
+		return 0, "", false
+	}
+	return id, parts[1], true
 }
 func (s *Server) adminDashboard(w http.ResponseWriter, r *http.Request) {
 	all := s.store.AllTunnels()

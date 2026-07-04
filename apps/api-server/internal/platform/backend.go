@@ -15,6 +15,8 @@ type Backend interface {
 	Redeem(userID int64, code string) (Subscription, error)
 	Subscription(userID int64) (Subscription, error)
 	CreateTunnel(userID int64, req Tunnel) (Tunnel, error)
+	CreateSpeedTestTunnel(userID int64, req SpeedTestTunnelRequest) (SpeedTestTunnel, error)
+	FinishSpeedTestTunnel(userID int64, tunnelID int64) error
 	Tunnels(userID int64) []Tunnel
 	AllTunnels() []Tunnel
 	Settings() Settings

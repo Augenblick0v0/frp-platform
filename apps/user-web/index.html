@@ -1,3 +1,162 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FRP User Panel</title><link rel="stylesheet" href="style.css"></head><body><div class="shell"><aside class="side"><div class="brand"><div class="logo"></div>FRP Panel</div><nav class="nav"><a class="active">概览</a><a>注册登录</a><a>兑换套餐</a><a>新增隧道</a><a>购买套餐</a></nav></aside><main class="main"><div class="top"><div><div class="eyebrow">User console</div><h1 class="title">我的内网穿透</h1><p class="subtitle">通过真实 API 完成注册、登录、兑换套餐和创建隧道。</p></div><button class="btn primary" id="refreshBtn">刷新</button></div><section class="grid cards"><div class="card"><div class="label">登录邮箱</div><div class="metric" id="emailState">未登录</div><span class="badge orange" id="loginBadge">guest</span></div><div class="card"><div class="label">套餐</div><div class="metric" id="planState">无</div><span class="badge red" id="subBadge">inactive</span></div><div class="card"><div class="label">剩余流量</div><div class="metric" id="trafficState">-</div><span class="badge blue" id="todayTrafficState">today -</span></div><div class="card"><div class="label">隧道数量</div><div class="metric" id="tunnelCount">0</div><span class="badge green">tunnels</span></div></section><section class="split" style="margin-top:16px"><div class="card"><h2>注册 / 登录</h2><div class="form"><input class="input" id="apiBase" placeholder="API 地址，默认 http://127.0.0.1:8080"><input class="input" id="email" placeholder="邮箱"><input class="input" id="password" type="password" placeholder="密码"><div><button class="btn secondary" id="sendCodeBtn">发送验证码</button> <input class="input" id="code" style="width:150px;display:inline-block" placeholder="验证码"></div><div><button class="btn secondary" id="registerBtn">注册</button> <button class="btn primary" id="loginBtn">登录</button></div></div><h2>兑换套餐</h2><div class="form"><input class="input" id="redeemCode" value="DEMO-PLAN-2026" placeholder="兑换码"><button class="btn primary" id="redeemBtn">兑换</button></div></div><div class="card"><h2>创建隧道</h2><div class="form"><input class="input" id="tunnelName" value="web" placeholder="隧道名称"><input class="input" id="tunnelType" value="http" placeholder="协议 tcp / udp / http / https"><input class="input" id="localHost" value="127.0.0.1" placeholder="本地地址"><input class="input" id="localPort" value="8080" placeholder="本地端口"><input class="input" id="domain" placeholder="HTTP/HTTPS 域名"><button class="btn primary" id="createTunnelBtn">创建隧道</button></div><p>CNAME 目标：</p><div class="code" id="cnameHint">app.user.com CNAME frp.example.com</div></div></section><section class="card" style="margin-top:16px"><h2>我的隧道</h2><table><thead><tr><th>名称</th><th>协议</th><th>入口</th><th>本地</th><th>状态</th></tr></thead><tbody id="tunnelRows"><tr><td colspan="5">暂无数据</td></tr></tbody></table><h2>模拟流量上报</h2><div class="form"><input class="input" id="reportTunnelId" placeholder="隧道 ID，可留空"><input class="input" id="bytesIn" value="1024" placeholder="入站 bytes"><input class="input" id="bytesOut" value="2048" placeholder="出站 bytes"><button class="btn secondary" id="reportTrafficBtn">上报流量</button></div><h2>操作日志</h2><div class="log" id="logBox">ready</div></section></main></div><script>
-const $=id=>document.getElementById(id);let token=localStorage.getItem('token')||'';let apiBase=localStorage.getItem('apiBase')||'http://127.0.0.1:8080';$('apiBase').value=apiBase;function log(x){$('logBox').textContent=(typeof x==='string'?x:JSON.stringify(x,null,2))+'\n'+$('logBox').textContent}function base(){apiBase=$('apiBase').value||'http://127.0.0.1:8080';localStorage.setItem('apiBase',apiBase);return apiBase.replace(/\/$/,'')}async function api(path,opts={}){const headers={'Content-Type':'application/json'};if(token)headers.Authorization='Bearer '+token;const r=await fetch(base()+path,{headers,...opts});const j=await r.json().catch(()=>({success:false,message:r.statusText}));if(!r.ok||j.success===false)throw new Error(j.message||r.statusText);return j.data}function fmtBytes(n){if(!n)return'-';return (n/1024/1024/1024).toFixed(1)+' GB'}async function refresh(){try{if(!token)return;const me=await api('/api/auth/me');$('emailState').textContent=me.email; $('loginBadge').textContent='logged in';$('loginBadge').className='badge green';try{const sub=await api('/api/user/subscription');$('planState').textContent=sub.plan_name;$('subBadge').textContent=sub.status;$('subBadge').className='badge green';$('trafficState').textContent=fmtBytes(sub.traffic_limit_bytes-sub.traffic_used_bytes);try{const tr=await api('/api/user/traffic');$('trafficState').textContent=fmtBytes(tr.traffic_left_bytes);$('todayTrafficState').textContent='today '+fmtBytes(tr.today_bytes)}catch(_){}}catch(e){$('planState').textContent='无';$('subBadge').textContent='inactive';$('subBadge').className='badge red'}const tunnels=await api('/api/tunnels');$('tunnelCount').textContent=tunnels.length;$('tunnelRows').innerHTML=tunnels.map(t=>`<tr><td>${t.name}</td><td>${t.type}</td><td>${t.public_url||''}</td><td>${t.local_host}:${t.local_port}</td><td><span class="badge orange">${t.status}</span></td></tr>`).join('')||'<tr><td colspan="5">暂无数据</td></tr>'}catch(e){log('刷新失败: '+e.message)}}$('sendCodeBtn').onclick=async()=>{try{const d=await api('/api/auth/send-email-code',{method:'POST',body:JSON.stringify({email:$('email').value,purpose:'register'})});$('code').value=d.dev_code||'';log(d)}catch(e){log(e.message)}};$('registerBtn').onclick=async()=>{try{log(await api('/api/auth/register',{method:'POST',body:JSON.stringify({email:$('email').value,password:$('password').value,code:$('code').value})}))}catch(e){log(e.message)}};$('loginBtn').onclick=async()=>{try{const d=await api('/api/auth/login',{method:'POST',body:JSON.stringify({email:$('email').value,password:$('password').value})});token=d.access_token;localStorage.setItem('token',token);log('登录成功');refresh()}catch(e){log(e.message)}};$('redeemBtn').onclick=async()=>{try{log(await api('/api/user/redeem',{method:'POST',body:JSON.stringify({code:$('redeemCode').value})}));refresh()}catch(e){log(e.message)}};$('createTunnelBtn').onclick=async()=>{try{const body={name:$('tunnelName').value,type:$('tunnelType').value,local_host:$('localHost').value,local_port:Number($('localPort').value),domain:$('domain').value,use_https:$('tunnelType').value==='https'};log(await api('/api/tunnels',{method:'POST',body:JSON.stringify(body)}));refresh()}catch(e){log(e.message)}};$('reportTrafficBtn').onclick=async()=>{try{log(await api('/api/client/traffic',{method:'POST',body:JSON.stringify({reports:[{tunnel_id:Number($('reportTunnelId').value)||0,bytes_in:Number($('bytesIn').value)||0,bytes_out:Number($('bytesOut').value)||0}]})}));refresh()}catch(e){log(e.message)}};$('refreshBtn').onclick=refresh;refresh();
-</script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>FRP User Panel</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <div class="brand"><div class="logo"></div>FRP Panel</div>
+    <nav class="nav">
+      <a class="active">概览</a>
+      <a>注册登录</a>
+      <a>兑换套餐</a>
+      <a>新增隧道</a>
+      <a>购买套餐</a>
+    </nav>
+  </aside>
+  <main class="main">
+    <div class="top">
+      <div>
+        <div class="eyebrow">User console</div>
+        <h1 class="title">我的内网穿透</h1>
+        <p class="subtitle">注册、登录、兑换套餐、创建隧道，并为单条隧道设置不超过套餐的限速。</p>
+      </div>
+      <button class="btn primary" id="refreshBtn">刷新</button>
+    </div>
+
+    <section class="grid cards">
+      <div class="card"><div class="label">登录邮箱</div><div class="metric" id="emailState">未登录</div><span class="badge orange" id="loginBadge">guest</span></div>
+      <div class="card"><div class="label">套餐</div><div class="metric" id="planState">无</div><span class="badge red" id="subBadge">inactive</span></div>
+      <div class="card"><div class="label">剩余流量</div><div class="metric" id="trafficState">-</div><span class="badge blue" id="todayTrafficState">today -</span></div>
+      <div class="card"><div class="label">隧道数量</div><div class="metric" id="tunnelCount">0</div><span class="badge green">tunnels</span></div>
+    </section>
+
+    <section class="split" style="margin-top:16px">
+      <div class="card">
+        <h2>注册 / 登录</h2>
+        <div class="form">
+          <input class="input" id="apiBase" placeholder="API 地址，默认 http://127.0.0.1:8080">
+          <input class="input" id="email" placeholder="邮箱">
+          <input class="input" id="password" type="password" placeholder="密码">
+          <div><button class="btn secondary" id="sendCodeBtn">发送验证码</button> <input class="input" id="code" style="width:150px;display:inline-block" placeholder="验证码"></div>
+          <div><button class="btn secondary" id="registerBtn">注册</button> <button class="btn primary" id="loginBtn">登录</button></div>
+        </div>
+        <h2>兑换套餐</h2>
+        <div class="form"><input class="input" id="redeemCode" value="DEMO-PLAN-2026" placeholder="兑换码"><button class="btn primary" id="redeemBtn">兑换</button></div>
+      </div>
+
+      <div class="card">
+        <h2>创建隧道</h2>
+        <div class="form">
+          <input class="input" id="tunnelName" value="web" placeholder="隧道名称">
+          <input class="input" id="tunnelType" value="http" placeholder="协议 tcp / udp / http / https">
+          <input class="input" id="localHost" value="127.0.0.1" placeholder="本地地址">
+          <input class="input" id="localPort" value="8080" placeholder="本地端口">
+          <input class="input" id="domain" placeholder="HTTP/HTTPS 域名">
+          <input class="input" id="bandwidthLimit" value="0" placeholder="隧道限速 Kbps，0 表示继承套餐">
+          <button class="btn primary" id="createTunnelBtn">创建隧道</button>
+        </div>
+        <p>隧道限速不能超过当前套餐限速。</p>
+        <p>CNAME 目标：</p>
+        <div class="code" id="cnameHint">app.user.com CNAME frp.example.com</div>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top:16px">
+      <h2>我的隧道</h2>
+      <table>
+        <thead><tr><th>名称</th><th>协议</th><th>入口</th><th>本地</th><th>限速</th><th>状态</th></tr></thead>
+        <tbody id="tunnelRows"><tr><td colspan="6">暂无数据</td></tr></tbody>
+      </table>
+      <h2>模拟流量上报</h2>
+      <div class="form">
+        <input class="input" id="reportTunnelId" placeholder="隧道 ID，可留空">
+        <input class="input" id="bytesIn" value="1024" placeholder="入站 bytes">
+        <input class="input" id="bytesOut" value="2048" placeholder="出站 bytes">
+        <button class="btn secondary" id="reportTrafficBtn">上报流量</button>
+      </div>
+      <h2>操作日志</h2>
+      <div class="log" id="logBox">ready</div>
+    </section>
+  </main>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+let token = localStorage.getItem('token') || '';
+let apiBase = localStorage.getItem('apiBase') || 'http://127.0.0.1:8080';
+$('apiBase').value = apiBase;
+function log(x) { $('logBox').textContent = (typeof x === 'string' ? x : JSON.stringify(x, null, 2)) + '\n' + $('logBox').textContent; }
+function base() { apiBase = $('apiBase').value || 'http://127.0.0.1:8080'; localStorage.setItem('apiBase', apiBase); return apiBase.replace(/\/$/, ''); }
+async function api(path, opts = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = 'Bearer ' + token;
+  const r = await fetch(base() + path, { headers, ...opts });
+  const j = await r.json().catch(() => ({ success: false, message: r.statusText }));
+  if (!r.ok || j.success === false) throw new Error(j.message || r.statusText);
+  return j.data;
+}
+function fmtBytes(n) { if (!n) return '-'; return (n / 1024 / 1024 / 1024).toFixed(1) + ' GB'; }
+function fmtLimit(t) {
+  const effective = t.effective_bandwidth_limit_kbps || t.bandwidth_limit_kbps || 0;
+  if (!effective) return '继承/不限';
+  return effective + ' Kbps';
+}
+async function refresh() {
+  try {
+    if (!token) return;
+    const me = await api('/api/auth/me');
+    $('emailState').textContent = me.email;
+    $('loginBadge').textContent = 'logged in';
+    $('loginBadge').className = 'badge green';
+    try {
+      const sub = await api('/api/user/subscription');
+      $('planState').textContent = sub.plan_name;
+      $('subBadge').textContent = sub.status;
+      $('subBadge').className = 'badge green';
+      $('trafficState').textContent = fmtBytes(sub.traffic_limit_bytes - sub.traffic_used_bytes);
+      try {
+        const tr = await api('/api/user/traffic');
+        $('trafficState').textContent = fmtBytes(tr.traffic_left_bytes);
+        $('todayTrafficState').textContent = 'today ' + fmtBytes(tr.today_bytes);
+      } catch (_) {}
+    } catch (e) {
+      $('planState').textContent = '无';
+      $('subBadge').textContent = 'inactive';
+      $('subBadge').className = 'badge red';
+    }
+    const tunnels = await api('/api/tunnels');
+    $('tunnelCount').textContent = tunnels.length;
+    $('tunnelRows').innerHTML = tunnels.map(t => `<tr><td>${t.name}</td><td>${t.type}</td><td>${t.public_url || ''}</td><td>${t.local_host}:${t.local_port}</td><td>${fmtLimit(t)}</td><td><span class="badge orange">${t.status}</span></td></tr>`).join('') || '<tr><td colspan="6">暂无数据</td></tr>';
+  } catch (e) {
+    log('刷新失败: ' + e.message);
+  }
+}
+$('sendCodeBtn').onclick = async () => { try { const d = await api('/api/auth/send-email-code', { method: 'POST', body: JSON.stringify({ email: $('email').value, purpose: 'register' }) }); $('code').value = d.dev_code || ''; log(d); } catch (e) { log(e.message); } };
+$('registerBtn').onclick = async () => { try { log(await api('/api/auth/register', { method: 'POST', body: JSON.stringify({ email: $('email').value, password: $('password').value, code: $('code').value }) })); } catch (e) { log(e.message); } };
+$('loginBtn').onclick = async () => { try { const d = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: $('email').value, password: $('password').value }) }); token = d.access_token; localStorage.setItem('token', token); log('登录成功'); refresh(); } catch (e) { log(e.message); } };
+$('redeemBtn').onclick = async () => { try { log(await api('/api/user/redeem', { method: 'POST', body: JSON.stringify({ code: $('redeemCode').value }) })); refresh(); } catch (e) { log(e.message); } };
+$('createTunnelBtn').onclick = async () => {
+  try {
+    const body = {
+      name: $('tunnelName').value,
+      type: $('tunnelType').value,
+      local_host: $('localHost').value,
+      local_port: Number($('localPort').value),
+      domain: $('domain').value,
+      use_https: $('tunnelType').value === 'https',
+      bandwidth_limit_kbps: Number($('bandwidthLimit').value) || 0
+    };
+    log(await api('/api/tunnels', { method: 'POST', body: JSON.stringify(body) }));
+    refresh();
+  } catch (e) { log(e.message); }
+};
+$('reportTrafficBtn').onclick = async () => { try { log(await api('/api/client/traffic', { method: 'POST', body: JSON.stringify({ reports: [{ tunnel_id: Number($('reportTunnelId').value) || 0, bytes_in: Number($('bytesIn').value) || 0, bytes_out: Number($('bytesOut').value) || 0 }] }) })); refresh(); } catch (e) { log(e.message); } };
+$('refreshBtn').onclick = refresh;
+refresh();
+</script>
+</body>
+</html>
