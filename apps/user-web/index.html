@@ -57,7 +57,8 @@
           <input class="input" id="localHost" value="127.0.0.1" placeholder="本地地址">
           <input class="input" id="localPort" value="8080" placeholder="本地端口">
           <input class="input" id="domain" placeholder="HTTP/HTTPS 域名">
-          <input class="input" id="bandwidthLimit" value="0" placeholder="隧道限速 Kbps，0 表示继承套餐">
+          <input class="input" id="bandwidthLimit" value="0" min="0" step="0.001" placeholder="隧道限速 Mbps，0 表示继承套餐">
+          <p class="field-hint" id="bandwidthLimitHint">0 表示继承套餐限速</p>
           <button class="btn primary" id="createTunnelBtn">创建隧道</button>
         </div>
         <p>隧道限速不能超过当前套餐限速。</p>
@@ -100,10 +101,26 @@ async function api(path, opts = {}) {
   return j.data;
 }
 function fmtBytes(n) { if (!n) return '-'; return (n / 1024 / 1024 / 1024).toFixed(1) + ' GB'; }
+function mbpsToKbps(v) {
+  if (!v || v < 0) return 0;
+  return Math.round(v * 1000);
+}
+function fmtMbpsFromKbps(v) {
+  if (!v || v < 0) return '-';
+  return (v / 1000).toFixed(2) + ' Mbps';
+}
+function fmtMBpsFromKbps(v) {
+  if (!v || v < 0) return '-';
+  return (v / 8000).toFixed(2) + ' MB/s';
+}
+function updateBandwidthLimitHint() {
+  const limit = Number($('bandwidthLimit').value) || 0;
+  $('bandwidthLimitHint').textContent = limit > 0 ? '≈ ' + (limit / 8).toFixed(3) + ' MB/s' : '0 表示继承套餐限速';
+}
 function fmtLimit(t) {
   const effective = t.effective_bandwidth_limit_kbps || t.bandwidth_limit_kbps || 0;
   if (!effective) return '继承/不限';
-  return effective + ' Kbps';
+  return fmtMbpsFromKbps(effective) + '（≈ ' + fmtMBpsFromKbps(effective) + '）';
 }
 async function refresh() {
   try {
@@ -148,12 +165,15 @@ $('createTunnelBtn').onclick = async () => {
       local_port: Number($('localPort').value),
       domain: $('domain').value,
       use_https: $('tunnelType').value === 'https',
-      bandwidth_limit_kbps: Number($('bandwidthLimit').value) || 0
+      bandwidth_limit_kbps: mbpsToKbps(Number($('bandwidthLimit').value) || 0)
     };
-    log(await api('/api/tunnels', { method: 'POST', body: JSON.stringify(body) }));
+    const created = await api('/api/tunnels', { method: 'POST', body: JSON.stringify(body) });
+    log('隧道创建成功：' + created.name + '，限速 ' + fmtLimit(created));
     refresh();
   } catch (e) { log(e.message); }
 };
+$('bandwidthLimit').addEventListener('input', updateBandwidthLimitHint);
+updateBandwidthLimitHint();
 $('reportTrafficBtn').onclick = async () => { try { log(await api('/api/client/traffic', { method: 'POST', body: JSON.stringify({ reports: [{ tunnel_id: Number($('reportTunnelId').value) || 0, bytes_in: Number($('bytesIn').value) || 0, bytes_out: Number($('bytesOut').value) || 0 }] }) })); refresh(); } catch (e) { log(e.message); } };
 $('refreshBtn').onclick = refresh;
 refresh();

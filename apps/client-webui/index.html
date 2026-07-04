@@ -66,8 +66,9 @@
             <label>持续秒数
               <input class="input" id="durationSeconds" value="15">
             </label>
-            <label>隧道限速 Kbps
-              <input class="input" id="speedLimit" value="0" placeholder="0 表示继承套餐限速">
+            <label>隧道限速 Mbps
+              <input class="input" id="speedLimit" value="0" min="0" step="0.001" placeholder="0 表示继承套餐限速">
+              <span class="field-hint" id="speedLimitHint">0 表示继承套餐限速</span>
             </label>
           </div>
           <div class="hint">测速会创建临时隧道，产生的流量会计入当前套餐。隧道限速不能超过套餐限速。</div>
@@ -101,24 +102,55 @@ async function api(path, opts = {}) {
 }
 function setBadge(el, text, cls) { el.textContent = text; el.className = 'badge ' + cls; }
 function num(id) { return Number(document.getElementById(id).value) || 0; }
-function fmtKbps(v) {
+function mbpsToKbps(v) {
+  if (!v || v < 0) return 0;
+  return Math.round(v * 1000);
+}
+function fmtMbpsFromKbps(v) {
   if (!v || v < 0) return '-';
-  if (v >= 1000) return (v / 1000).toFixed(2) + ' Mbps';
-  return v.toFixed(0) + ' Kbps';
+  return (v / 1000).toFixed(2) + ' Mbps';
+}
+function fmtMBpsFromKbps(v) {
+  if (!v || v < 0) return '-';
+  return (v / 8000).toFixed(2) + ' MB/s';
+}
+function fmtRate(v) {
+  if (!v || v < 0) return '-';
+  return fmtMbpsFromKbps(v) + '\n≈ ' + fmtMBpsFromKbps(v);
+}
+function updateSpeedLimitHint() {
+  const limit = num('speedLimit');
+  document.getElementById('speedLimitHint').textContent = limit > 0 ? '≈ ' + (limit / 8).toFixed(3) + ' MB/s' : '0 表示继承套餐限速';
 }
 function setResult(items) {
   const cells = document.querySelectorAll('#speedResult strong');
-  cells[0].textContent = fmtKbps(items.download_average_kbps);
-  cells[1].textContent = fmtKbps(items.download_peak_kbps);
-  cells[2].textContent = fmtKbps(items.upload_average_kbps);
-  cells[3].textContent = fmtKbps(items.upload_peak_kbps);
-  cells[4].textContent = items.latency_ms ? items.latency_ms.toFixed(1) + ' ms' : '-';
+  cells[0].textContent = fmtRate(items.download_average_kbps);
+  cells[1].textContent = fmtRate(items.download_peak_kbps);
+  cells[2].textContent = fmtRate(items.upload_average_kbps);
+  cells[3].textContent = fmtRate(items.upload_peak_kbps);
+  cells[4].textContent = items.latency_ms || items.latency_ms === 0 ? items.latency_ms.toFixed(1) + ' ms' : '-';
   if (items.effective_bandwidth_limit_kbps > 0) {
     const pct = (items.limit_ratio * 100).toFixed(0);
-    cells[5].textContent = pct + '% of ' + fmtKbps(items.effective_bandwidth_limit_kbps);
+    cells[5].textContent = pct + '% of ' + fmtMbpsFromKbps(items.effective_bandwidth_limit_kbps) + '\n≈ ' + fmtMBpsFromKbps(items.effective_bandwidth_limit_kbps);
   } else {
     cells[5].textContent = '未限速';
   }
+}
+function speedSummary(items) {
+  const lines = [
+    '测速完成',
+    '下载平均：' + fmtRate(items.download_average_kbps).replace('\n', ' '),
+    '下载峰值：' + fmtRate(items.download_peak_kbps).replace('\n', ' '),
+    '上传平均：' + fmtRate(items.upload_average_kbps).replace('\n', ' '),
+    '上传峰值：' + fmtRate(items.upload_peak_kbps).replace('\n', ' '),
+    '延迟：' + (items.latency_ms || items.latency_ms === 0 ? items.latency_ms.toFixed(1) + ' ms' : '-')
+  ];
+  if (items.effective_bandwidth_limit_kbps > 0) {
+    lines.push('限速对比：' + (items.limit_ratio * 100).toFixed(0) + '% of ' + fmtMbpsFromKbps(items.effective_bandwidth_limit_kbps) + ' ≈ ' + fmtMBpsFromKbps(items.effective_bandwidth_limit_kbps));
+  } else {
+    lines.push('限速对比：未限速');
+  }
+  return lines.join('\n');
 }
 async function refresh() {
   try {
@@ -152,12 +184,16 @@ document.getElementById('speedTestBtn').onclick = async () => {
     download_bytes: num('downloadBytes'),
     upload_bytes: num('uploadBytes'),
     duration_seconds: num('durationSeconds'),
-    bandwidth_limit_kbps: num('speedLimit')
+    bandwidth_limit_kbps: mbpsToKbps(num('speedLimit'))
   };
   try {
     const res = await api('/api/speed-tests/run', { method: 'POST', body: JSON.stringify(payload) });
-    document.getElementById('logs').textContent = JSON.stringify(res, null, 2);
-    if (res.success) setResult(res.data);
+    if (res.success) {
+      setResult(res.data);
+      document.getElementById('logs').textContent = speedSummary(res.data);
+    } else {
+      document.getElementById('logs').textContent = JSON.stringify(res, null, 2);
+    }
   } finally {
     btn.disabled = false;
     btn.textContent = '开始测速';
@@ -182,6 +218,8 @@ document.getElementById('reportTrafficBtn').onclick = async () => {
   document.getElementById('logs').textContent = JSON.stringify(res, null, 2);
   refresh();
 };
+document.getElementById('speedLimit').addEventListener('input', updateSpeedLimitHint);
+updateSpeedLimitHint();
 refresh();
 setInterval(refresh, 5000);
 </script>
