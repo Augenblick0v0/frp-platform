@@ -9,6 +9,9 @@ type Backend interface {
 	UserByToken(token string) (User, error)
 	Plans() []Plan
 	CreatePlan(plan Plan) (Plan, error)
+	CreatePaymentOrder(order PaymentOrder) (PaymentOrder, error)
+	PaymentOrderByOutTradeNo(outTradeNo string) (PaymentOrder, error)
+	MarkPaymentOrderPaid(outTradeNo, providerTradeNo string) (PaymentOrder, Subscription, error)
 	Users() []User
 	RedeemCodes() []RedeemCode
 	CreateRedeemCodes(planID int64, count int, prefix string) ([]RedeemCode, error)

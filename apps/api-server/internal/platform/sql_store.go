@@ -44,8 +44,8 @@ func (s *SQLStore) SeedDefaults() error {
 	}
 	_, err := s.db.Exec(`
 SELECT setval(pg_get_serial_sequence('admin_users','id'), GREATEST((SELECT MAX(id) FROM admin_users), 1));
-INSERT INTO plans (id,name,description,duration_days,traffic_limit_bytes,bandwidth_limit_kbps,max_tunnels,max_tcp_tunnels,max_udp_tunnels,max_http_tunnels,max_https_tunnels,allow_tcp,allow_udp,allow_http,allow_https,allow_custom_domain,max_domains,allow_auto_cert,status)
-VALUES (1,'高级套餐','支持 TCP/UDP/HTTP/HTTPS、自定义域名和自动证书',30,107374182400,10240,20,10,10,10,10,true,true,true,true,true,10,true,'active')
+INSERT INTO plans (id,name,description,price_cents,duration_days,traffic_limit_bytes,bandwidth_limit_kbps,max_tunnels,max_tcp_tunnels,max_udp_tunnels,max_http_tunnels,max_https_tunnels,allow_tcp,allow_udp,allow_http,allow_https,allow_custom_domain,max_domains,allow_auto_cert,status)
+VALUES (1,'高级套餐','支持 TCP/UDP/HTTP/HTTPS、自定义域名和自动证书',990,30,107374182400,10240,20,10,10,10,10,true,true,true,true,true,10,true,'active')
 ON CONFLICT (id) DO NOTHING;
 SELECT setval(pg_get_serial_sequence('plans','id'), GREATEST((SELECT MAX(id) FROM plans), 1));
 INSERT INTO redeem_codes (code, plan_id, status) VALUES ('DEMO-PLAN-2026', 1, 'unused') ON CONFLICT (code) DO NOTHING;
@@ -141,7 +141,7 @@ func (s *SQLStore) UserByToken(token string) (User, error) {
 }
 
 func (s *SQLStore) Plans() []Plan {
-	rows, err := s.db.Query(`SELECT id,name,coalesce(description,''),duration_days,traffic_limit_bytes,bandwidth_limit_kbps,max_tunnels,max_tcp_tunnels,max_udp_tunnels,max_http_tunnels,max_https_tunnels,allow_tcp,allow_udp,allow_http,allow_https,allow_custom_domain,max_domains,allow_auto_cert,status FROM plans ORDER BY sort_order,id`)
+	rows, err := s.db.Query(`SELECT id,name,coalesce(description,''),price_cents,duration_days,traffic_limit_bytes,bandwidth_limit_kbps,max_tunnels,max_tcp_tunnels,max_udp_tunnels,max_http_tunnels,max_https_tunnels,allow_tcp,allow_udp,allow_http,allow_https,allow_custom_domain,max_domains,allow_auto_cert,status FROM plans ORDER BY sort_order,id`)
 	if err != nil {
 		return nil
 	}
@@ -149,10 +149,74 @@ func (s *SQLStore) Plans() []Plan {
 	var out []Plan
 	for rows.Next() {
 		var p Plan
-		_ = rows.Scan(&p.ID, &p.Name, &p.Description, &p.DurationDays, &p.TrafficLimitBytes, &p.BandwidthKbps, &p.MaxTunnels, &p.MaxTCPTunnels, &p.MaxUDPTunnels, &p.MaxHTTPTunnels, &p.MaxHTTPSTunnels, &p.AllowTCP, &p.AllowUDP, &p.AllowHTTP, &p.AllowHTTPS, &p.AllowCustomDomain, &p.MaxDomains, &p.AllowAutoCert, &p.Status)
+		_ = rows.Scan(&p.ID, &p.Name, &p.Description, &p.PriceCents, &p.DurationDays, &p.TrafficLimitBytes, &p.BandwidthKbps, &p.MaxTunnels, &p.MaxTCPTunnels, &p.MaxUDPTunnels, &p.MaxHTTPTunnels, &p.MaxHTTPSTunnels, &p.AllowTCP, &p.AllowUDP, &p.AllowHTTP, &p.AllowHTTPS, &p.AllowCustomDomain, &p.MaxDomains, &p.AllowAutoCert, &p.Status)
 		out = append(out, p)
 	}
 	return out
+}
+
+func (s *SQLStore) CreatePaymentOrder(order PaymentOrder) (PaymentOrder, error) {
+	if order.Status == "" {
+		order.Status = "pending"
+	}
+	if order.Provider == "" {
+		order.Provider = "epay"
+	}
+	err := s.db.QueryRow(`INSERT INTO payment_orders (user_id,plan_id,provider,out_trade_no,pay_type,name,money,status)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+RETURNING id,created_at`, order.UserID, order.PlanID, order.Provider, order.OutTradeNo, order.PayType, order.Name, order.Money, order.Status).Scan(&order.ID, &order.CreatedAt)
+	if err != nil {
+		if isUnique(err) {
+			return PaymentOrder{}, ErrConflict
+		}
+		return PaymentOrder{}, err
+	}
+	return order, nil
+}
+
+func (s *SQLStore) PaymentOrderByOutTradeNo(outTradeNo string) (PaymentOrder, error) {
+	row := s.db.QueryRow(`SELECT id,user_id,plan_id,provider,out_trade_no,coalesce(provider_trade_no,''),coalesce(pay_type,''),name,money,status,created_at,paid_at FROM payment_orders WHERE out_trade_no=$1`, strings.TrimSpace(outTradeNo))
+	return scanPaymentOrder(row)
+}
+
+func (s *SQLStore) MarkPaymentOrderPaid(outTradeNo, providerTradeNo string) (PaymentOrder, Subscription, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return PaymentOrder{}, Subscription{}, err
+	}
+	defer tx.Rollback()
+	order, err := scanPaymentOrder(tx.QueryRow(`SELECT id,user_id,plan_id,provider,out_trade_no,coalesce(provider_trade_no,''),coalesce(pay_type,''),name,money,status,created_at,paid_at FROM payment_orders WHERE out_trade_no=$1 FOR UPDATE`, strings.TrimSpace(outTradeNo)))
+	if err != nil {
+		return PaymentOrder{}, Subscription{}, ErrNotFound
+	}
+	p, err := scanPlan(tx.QueryRow(`SELECT id,name,coalesce(description,''),price_cents,duration_days,traffic_limit_bytes,bandwidth_limit_kbps,max_tunnels,max_tcp_tunnels,max_udp_tunnels,max_http_tunnels,max_https_tunnels,allow_tcp,allow_udp,allow_http,allow_https,allow_custom_domain,max_domains,allow_auto_cert,status FROM plans WHERE id=$1`, order.PlanID))
+	if err != nil || p.Status != "active" {
+		return PaymentOrder{}, Subscription{}, ErrNotFound
+	}
+	if order.Status != "paid" {
+		now := time.Now()
+		_, err = tx.Exec(`UPDATE payment_orders SET status='paid', provider_trade_no=$1, paid_at=$2 WHERE id=$3`, strings.TrimSpace(providerTradeNo), now, order.ID)
+		if err != nil {
+			return PaymentOrder{}, Subscription{}, err
+		}
+		_, _ = tx.Exec(`UPDATE subscriptions SET status='replaced' WHERE user_id=$1 AND status='active'`, order.UserID)
+		expires := now.AddDate(0, 0, p.DurationDays)
+		_, err = tx.Exec(`INSERT INTO subscriptions (user_id,plan_id,starts_at,expires_at,traffic_limit_bytes,bandwidth_limit_kbps,status) VALUES ($1,$2,$3,$4,$5,$6,'active')`, order.UserID, p.ID, now, expires, p.TrafficLimitBytes, p.BandwidthKbps)
+		if err != nil {
+			return PaymentOrder{}, Subscription{}, err
+		}
+		order.Status = "paid"
+		order.ProviderTradeNo = strings.TrimSpace(providerTradeNo)
+		order.PaidAt = &now
+	}
+	if err := tx.Commit(); err != nil {
+		return PaymentOrder{}, Subscription{}, err
+	}
+	sub, err := s.Subscription(order.UserID)
+	if err != nil {
+		return PaymentOrder{}, Subscription{}, err
+	}
+	return order, sub, nil
 }
 
 func (s *SQLStore) Redeem(userID int64, code string) (Subscription, error) {
@@ -170,7 +234,7 @@ func (s *SQLStore) Redeem(userID int64, code string) (Subscription, error) {
 	if status != "unused" {
 		return Subscription{}, ErrForbidden
 	}
-	p, err := scanPlan(tx.QueryRow(`SELECT id,name,coalesce(description,''),duration_days,traffic_limit_bytes,bandwidth_limit_kbps,max_tunnels,max_tcp_tunnels,max_udp_tunnels,max_http_tunnels,max_https_tunnels,allow_tcp,allow_udp,allow_http,allow_https,allow_custom_domain,max_domains,allow_auto_cert,status FROM plans WHERE id=$1`, planID))
+	p, err := scanPlan(tx.QueryRow(`SELECT id,name,coalesce(description,''),price_cents,duration_days,traffic_limit_bytes,bandwidth_limit_kbps,max_tunnels,max_tcp_tunnels,max_udp_tunnels,max_http_tunnels,max_https_tunnels,allow_tcp,allow_udp,allow_http,allow_https,allow_custom_domain,max_domains,allow_auto_cert,status FROM plans WHERE id=$1`, planID))
 	if err != nil || p.Status != "active" {
 		return Subscription{}, ErrNotFound
 	}
@@ -192,11 +256,11 @@ func (s *SQLStore) Redeem(userID int64, code string) (Subscription, error) {
 }
 
 func (s *SQLStore) Subscription(userID int64) (Subscription, error) {
-	row := s.db.QueryRow(`SELECT p.id,p.name,coalesce(p.description,''),p.duration_days,sub.traffic_limit_bytes,sub.bandwidth_limit_kbps,p.max_tunnels,p.max_tcp_tunnels,p.max_udp_tunnels,p.max_http_tunnels,p.max_https_tunnels,p.allow_tcp,p.allow_udp,p.allow_http,p.allow_https,p.allow_custom_domain,p.max_domains,p.allow_auto_cert,sub.status,sub.expires_at,sub.traffic_used_bytes FROM subscriptions sub JOIN plans p ON p.id=sub.plan_id WHERE sub.user_id=$1 AND sub.status='active' ORDER BY sub.expires_at DESC LIMIT 1`, userID)
+	row := s.db.QueryRow(`SELECT p.id,p.name,coalesce(p.description,''),p.price_cents,p.duration_days,sub.traffic_limit_bytes,sub.bandwidth_limit_kbps,p.max_tunnels,p.max_tcp_tunnels,p.max_udp_tunnels,p.max_http_tunnels,p.max_https_tunnels,p.allow_tcp,p.allow_udp,p.allow_http,p.allow_https,p.allow_custom_domain,p.max_domains,p.allow_auto_cert,sub.status,sub.expires_at,sub.traffic_used_bytes FROM subscriptions sub JOIN plans p ON p.id=sub.plan_id WHERE sub.user_id=$1 AND sub.status='active' ORDER BY sub.expires_at DESC LIMIT 1`, userID)
 	var p Plan
 	var expires time.Time
 	var used int64
-	err := row.Scan(&p.ID, &p.Name, &p.Description, &p.DurationDays, &p.TrafficLimitBytes, &p.BandwidthKbps, &p.MaxTunnels, &p.MaxTCPTunnels, &p.MaxUDPTunnels, &p.MaxHTTPTunnels, &p.MaxHTTPSTunnels, &p.AllowTCP, &p.AllowUDP, &p.AllowHTTP, &p.AllowHTTPS, &p.AllowCustomDomain, &p.MaxDomains, &p.AllowAutoCert, &p.Status, &expires, &used)
+	err := row.Scan(&p.ID, &p.Name, &p.Description, &p.PriceCents, &p.DurationDays, &p.TrafficLimitBytes, &p.BandwidthKbps, &p.MaxTunnels, &p.MaxTCPTunnels, &p.MaxUDPTunnels, &p.MaxHTTPTunnels, &p.MaxHTTPSTunnels, &p.AllowTCP, &p.AllowUDP, &p.AllowHTTP, &p.AllowHTTPS, &p.AllowCustomDomain, &p.MaxDomains, &p.AllowAutoCert, &p.Status, &expires, &used)
 	if err != nil {
 		return Subscription{}, ErrNotFound
 	}
@@ -560,9 +624,24 @@ func (s *SQLStore) UpdateSettings(in Settings) Settings {
 
 func scanPlan(row *sql.Row) (Plan, error) {
 	var p Plan
-	err := row.Scan(&p.ID, &p.Name, &p.Description, &p.DurationDays, &p.TrafficLimitBytes, &p.BandwidthKbps, &p.MaxTunnels, &p.MaxTCPTunnels, &p.MaxUDPTunnels, &p.MaxHTTPTunnels, &p.MaxHTTPSTunnels, &p.AllowTCP, &p.AllowUDP, &p.AllowHTTP, &p.AllowHTTPS, &p.AllowCustomDomain, &p.MaxDomains, &p.AllowAutoCert, &p.Status)
+	err := row.Scan(&p.ID, &p.Name, &p.Description, &p.PriceCents, &p.DurationDays, &p.TrafficLimitBytes, &p.BandwidthKbps, &p.MaxTunnels, &p.MaxTCPTunnels, &p.MaxUDPTunnels, &p.MaxHTTPTunnels, &p.MaxHTTPSTunnels, &p.AllowTCP, &p.AllowUDP, &p.AllowHTTP, &p.AllowHTTPS, &p.AllowCustomDomain, &p.MaxDomains, &p.AllowAutoCert, &p.Status)
 	return p, err
 }
+
+type paymentOrderScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanPaymentOrder(row paymentOrderScanner) (PaymentOrder, error) {
+	var o PaymentOrder
+	var paid sql.NullTime
+	err := row.Scan(&o.ID, &o.UserID, &o.PlanID, &o.Provider, &o.OutTradeNo, &o.ProviderTradeNo, &o.PayType, &o.Name, &o.Money, &o.Status, &o.CreatedAt, &paid)
+	if paid.Valid {
+		o.PaidAt = &paid.Time
+	}
+	return o, err
+}
+
 func planToSub(userID int64, p Plan, expires time.Time) Subscription {
 	return Subscription{UserID: userID, PlanID: p.ID, PlanName: p.Name, ExpiresAt: expires, TrafficLimitBytes: p.TrafficLimitBytes, BandwidthKbps: p.BandwidthKbps, AllowTCP: p.AllowTCP, AllowUDP: p.AllowUDP, AllowHTTP: p.AllowHTTP, AllowHTTPS: p.AllowHTTPS, AllowCustomDomain: p.AllowCustomDomain, AllowAutoCert: p.AllowAutoCert, MaxTunnels: p.MaxTunnels, MaxTCPTunnels: p.MaxTCPTunnels, MaxUDPTunnels: p.MaxUDPTunnels, MaxHTTPTunnels: p.MaxHTTPTunnels, MaxHTTPSTunnels: p.MaxHTTPSTunnels, MaxDomains: p.MaxDomains, Status: "active"}
 }
@@ -576,9 +655,9 @@ func (s *SQLStore) CreatePlan(plan Plan) (Plan, error) {
 	if plan.Status == "" {
 		plan.Status = "active"
 	}
-	err := s.db.QueryRow(`INSERT INTO plans (name,description,duration_days,traffic_limit_bytes,bandwidth_limit_kbps,max_tunnels,max_tcp_tunnels,max_udp_tunnels,max_http_tunnels,max_https_tunnels,allow_tcp,allow_udp,allow_http,allow_https,allow_custom_domain,max_domains,allow_auto_cert,status)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
-RETURNING id`, plan.Name, plan.Description, plan.DurationDays, plan.TrafficLimitBytes, plan.BandwidthKbps, plan.MaxTunnels, plan.MaxTCPTunnels, plan.MaxUDPTunnels, plan.MaxHTTPTunnels, plan.MaxHTTPSTunnels, plan.AllowTCP, plan.AllowUDP, plan.AllowHTTP, plan.AllowHTTPS, plan.AllowCustomDomain, plan.MaxDomains, plan.AllowAutoCert, plan.Status).Scan(&plan.ID)
+	err := s.db.QueryRow(`INSERT INTO plans (name,description,price_cents,duration_days,traffic_limit_bytes,bandwidth_limit_kbps,max_tunnels,max_tcp_tunnels,max_udp_tunnels,max_http_tunnels,max_https_tunnels,allow_tcp,allow_udp,allow_http,allow_https,allow_custom_domain,max_domains,allow_auto_cert,status)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+RETURNING id`, plan.Name, plan.Description, plan.PriceCents, plan.DurationDays, plan.TrafficLimitBytes, plan.BandwidthKbps, plan.MaxTunnels, plan.MaxTCPTunnels, plan.MaxUDPTunnels, plan.MaxHTTPTunnels, plan.MaxHTTPSTunnels, plan.AllowTCP, plan.AllowUDP, plan.AllowHTTP, plan.AllowHTTPS, plan.AllowCustomDomain, plan.MaxDomains, plan.AllowAutoCert, plan.Status).Scan(&plan.ID)
 	return plan, err
 }
 

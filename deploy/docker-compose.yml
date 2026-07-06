@@ -68,6 +68,14 @@ services:
       FRPS_STATUS_CMD: ${FRPS_STATUS_CMD}
       FRPS_RESTART_CMD: ${FRPS_RESTART_CMD}
       FRPS_RELOAD_CMD: ${FRPS_RELOAD_CMD}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      EPAY_API_BASE: ${EPAY_API_BASE}
+      EPAY_SUBMIT_URL: ${EPAY_SUBMIT_URL}
+      EPAY_MAPI_URL: ${EPAY_MAPI_URL}
+      EPAY_PID: ${EPAY_PID}
+      EPAY_KEY: ${EPAY_KEY}
+      EPAY_APP_KEY: ${EPAY_APP_KEY}
+      EPAY_SITE_NAME: ${EPAY_SITE_NAME}
     volumes:
       - ./nginx/conf.d:/app/runtime/nginx-conf.d
       - ./certbot/www:/var/www/certbot

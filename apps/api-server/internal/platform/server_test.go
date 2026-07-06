@@ -6,9 +6,85 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestEpayCreateOrderAndNotifyActivatesPlan(t *testing.T) {
+	t.Setenv("EPAY_API_BASE", "https://pay.flwi.top")
+	t.Setenv("EPAY_PID", "743506")
+	t.Setenv("EPAY_KEY", "test-secret")
+	t.Setenv("PUBLIC_BASE_URL", "https://panel.example.com")
+	store := NewStore()
+	s := NewServer(store)
+	post(t, s, "/api/auth/send-email-code", map[string]any{"email": "pay@example.com", "purpose": "register"}, "")
+	post(t, s, "/api/auth/register", map[string]any{"email": "pay@example.com", "code": "123456", "password": "pass"}, "")
+	login := post(t, s, "/api/auth/login", map[string]any{"email": "pay@example.com", "password": "pass"}, "")
+	token := login["access_token"].(string)
+	plan, err := store.CreatePlan(Plan{Name: "Paid", DurationDays: 7, TrafficLimitBytes: 1024, BandwidthKbps: 1000, MaxTunnels: 1, AllowTCP: true, Status: "active", PriceCents: 990})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := post(t, s, "/api/payments/epay/orders", map[string]any{"plan_id": plan.ID, "pay_type": "alipay"}, token)
+	if created["pay_url"] == "" || created["out_trade_no"] == "" {
+		t.Fatalf("unexpected payment order %#v", created)
+	}
+	if created["money"] != "9.90" {
+		t.Fatalf("expected amount 9.90, got %#v", created["money"])
+	}
+	outTradeNo := created["out_trade_no"].(string)
+	notify := epaySignedValues(map[string]string{
+		"pid":          "743506",
+		"trade_no":     "EPAY123",
+		"out_trade_no": outTradeNo,
+		"type":         "alipay",
+		"name":         "Paid",
+		"money":        "9.90",
+		"trade_status": "TRADE_SUCCESS",
+	}, "test-secret")
+	rr := formRequest(t, s, "POST", "/api/payments/epay/notify", notify)
+	if rr.Code != 200 || strings.TrimSpace(rr.Body.String()) != "success" {
+		t.Fatalf("notify status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	sub, err := store.Subscription(1)
+	if err != nil || sub.PlanID != plan.ID || sub.PlanName != "Paid" {
+		t.Fatalf("expected paid subscription, sub=%#v err=%v", sub, err)
+	}
+}
+
+func TestEpayNotifyRejectsBadSignature(t *testing.T) {
+	t.Setenv("EPAY_PID", "743506")
+	t.Setenv("EPAY_KEY", "test-secret")
+	store := NewStore()
+	store.SendEmailCode("badpay@example.com", "register")
+	if _, err := store.Register("badpay@example.com", "123456", "pass"); err != nil {
+		t.Fatal(err)
+	}
+	order, err := store.CreatePaymentOrder(PaymentOrder{UserID: 1, PlanID: 1, Provider: "epay", OutTradeNo: "FPTESTBAD", Name: "高级套餐", Money: "1.00", Status: "pending"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewServer(store)
+	rr := formRequest(t, s, "POST", "/api/payments/epay/notify", map[string]string{
+		"pid":          "743506",
+		"trade_no":     "EPAY-BAD",
+		"out_trade_no": order.OutTradeNo,
+		"type":         "alipay",
+		"name":         order.Name,
+		"money":        order.Money,
+		"trade_status": "TRADE_SUCCESS",
+		"sign":         "bad",
+		"sign_type":    "MD5",
+	})
+	if rr.Code != 400 || strings.TrimSpace(rr.Body.String()) == "success" {
+		t.Fatalf("expected bad notify to fail, status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if _, err := store.Subscription(1); err == nil {
+		t.Fatalf("bad signature should not activate subscription")
+	}
+}
 
 func TestUserRedeemAndCreateTCPTunnel(t *testing.T) {
 	s := NewServer(NewStore())
@@ -173,6 +249,19 @@ func request(t *testing.T, s *Server, method, path string, body map[string]any, 
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+	return rr
+}
+
+func formRequest(t *testing.T, s *Server, method, path string, vals map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	form := make(url.Values)
+	for k, v := range vals {
+		form.Set(k, v)
+	}
+	req := httptest.NewRequest(method, path, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rr := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rr, req)
 	return rr

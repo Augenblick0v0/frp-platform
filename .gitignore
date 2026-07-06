@@ -1,4 +1,8 @@
 .env
+deploy/.env
+deploy/.env.control
+deploy/.env.node
+deploy/.env.fnos
 *.log
 .DS_Store
 node_modules/
@@ -10,4 +14,10 @@ redis/data/
 mail/data/
 mail/state/
 certbot/letsencrypt/
+deploy/postgres/
+deploy/redis/
+deploy/mail/data/
+deploy/mail/state/
+deploy/mail/logs/
+deploy/logs/
 dist/

@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS plans (
     id BIGSERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     description TEXT,
+    price_cents BIGINT NOT NULL DEFAULT 0,
     duration_days INTEGER NOT NULL,
     traffic_limit_bytes BIGINT NOT NULL,
     bandwidth_limit_kbps INTEGER NOT NULL,
@@ -75,6 +76,23 @@ CREATE TABLE IF NOT EXISTS plans (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE IF EXISTS plans ADD COLUMN IF NOT EXISTS price_cents BIGINT NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS payment_orders (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id),
+    plan_id BIGINT NOT NULL REFERENCES plans(id),
+    provider VARCHAR(32) NOT NULL,
+    out_trade_no VARCHAR(64) NOT NULL UNIQUE,
+    provider_trade_no VARCHAR(128),
+    pay_type VARCHAR(32),
+    name VARCHAR(255) NOT NULL,
+    money VARCHAR(32) NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    paid_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_payment_orders_user ON payment_orders(user_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS subscriptions (
     id BIGSERIAL PRIMARY KEY,

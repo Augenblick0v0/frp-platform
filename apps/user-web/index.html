@@ -68,6 +68,15 @@
     </section>
 
     <section class="card" style="margin-top:16px">
+      <h2>购买套餐</h2>
+      <p class="subtitle">选择套餐后将跳转到易支付收银台，支付成功后自动开通套餐。</p>
+      <table>
+        <thead><tr><th>套餐</th><th>价格</th><th>流量</th><th>限速</th><th>操作</th></tr></thead>
+        <tbody id="planBuyRows"><tr><td colspan="5">登录后加载套餐</td></tr></tbody>
+      </table>
+    </section>
+
+    <section class="card" style="margin-top:16px">
       <h2>我的隧道</h2>
       <table>
         <thead><tr><th>名称</th><th>协议</th><th>入口</th><th>本地</th><th>限速</th><th>状态</th></tr></thead>
@@ -113,6 +122,7 @@ function fmtMBpsFromKbps(v) {
   if (!v || v < 0) return '-';
   return (v / 8000).toFixed(2) + ' MB/s';
 }
+function fmtMoney(cents) { return '¥' + ((Number(cents)||0) / 100).toFixed(2); }
 function updateBandwidthLimitHint() {
   const limit = Number($('bandwidthLimit').value) || 0;
   $('bandwidthLimitHint').textContent = limit > 0 ? '≈ ' + (limit / 8).toFixed(3) + ' MB/s' : '0 表示继承套餐限速';
@@ -124,7 +134,7 @@ function fmtLimit(t) {
 }
 async function refresh() {
   try {
-    if (!token) return;
+    if (!token) { $('planBuyRows').innerHTML = '<tr><td colspan="5">请先登录后购买</td></tr>'; return; }
     const me = await api('/api/auth/me');
     $('emailState').textContent = me.email;
     $('loginBadge').textContent = 'logged in';
@@ -145,12 +155,25 @@ async function refresh() {
       $('subBadge').textContent = 'inactive';
       $('subBadge').className = 'badge red';
     }
+    await loadPlans();
     const tunnels = await api('/api/tunnels');
     $('tunnelCount').textContent = tunnels.length;
     $('tunnelRows').innerHTML = tunnels.map(t => `<tr><td>${t.name}</td><td>${t.type}</td><td>${t.public_url || ''}</td><td>${t.local_host}:${t.local_port}</td><td>${fmtLimit(t)}</td><td><span class="badge orange">${t.status}</span></td></tr>`).join('') || '<tr><td colspan="6">暂无数据</td></tr>';
   } catch (e) {
     log('刷新失败: ' + e.message);
   }
+}
+
+async function loadPlans() {
+  const plans = await api('/api/user/plans');
+  $('planBuyRows').innerHTML = plans.map(p => `<tr><td>${p.name}<br><small>${p.description || ''}</small></td><td>${fmtMoney(p.price_cents)}</td><td>${fmtBytes(p.traffic_limit_bytes)}</td><td>${fmtMbpsFromKbps(p.bandwidth_limit_kbps)}</td><td><button class="btn primary" onclick="buyPlan(${p.id})">去支付</button></td></tr>`).join('') || '<tr><td colspan="5">暂无可购买套餐</td></tr>';
+}
+async function buyPlan(planId) {
+  try {
+    const order = await api('/api/payments/epay/orders', { method: 'POST', body: JSON.stringify({ plan_id: planId, pay_type: 'alipay' }) });
+    log('订单已创建：' + order.out_trade_no + '，金额 ¥' + order.money);
+    window.location.href = order.pay_url;
+  } catch (e) { log(e.message); }
 }
 $('sendCodeBtn').onclick = async () => { try { const d = await api('/api/auth/send-email-code', { method: 'POST', body: JSON.stringify({ email: $('email').value, purpose: 'register' }) }); $('code').value = d.dev_code || ''; log(d); } catch (e) { log(e.message); } };
 $('registerBtn').onclick = async () => { try { log(await api('/api/auth/register', { method: 'POST', body: JSON.stringify({ email: $('email').value, password: $('password').value, code: $('code').value }) })); } catch (e) { log(e.message); } };
