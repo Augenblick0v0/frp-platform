@@ -17,16 +17,18 @@ server {
     }
 
     location = / {
-        return 404;
+        try_files /index.html =404;
     }
 
-    location ^~ /admin/ {
-        return 404;
+    location = /index.html {
+        try_files /index.html =404;
     }
 
-    location ^~ /${FNOS_ADMIN_PATH}/ {
-        rewrite ^/${FNOS_ADMIN_PATH}/(.*)$ /$1 break;
-        root /usr/share/nginx/html;
-        try_files $uri $uri/ /index.html;
+    location = /style.css {
+        try_files /style.css =404;
+    }
+
+    location / {
+        return 404;
     }
 }

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把 FRP 平台本机部署改成用户端和后台管理端分离入口，后台入口使用随机短路径，并重做用户端为“未登录只显示登录/注册，登录后才进入隧道控制台”的合理动线。
+**Goal:** 把 FRP 平台本机部署改成用户端和后台管理端分离入口，后台入口使用独立端口直达，并重做用户端为“未登录只显示登录/注册，登录后才进入隧道控制台”的合理动线。
 
 **Architecture:** 当前 `deploy/nginx-fnos/nginx.conf` 把用户端、后台和 API 都堆在同一个入口下，且后台固定 `/admin/`；本次改成两个独立入口镜像：用户端镜像内置 Nginx、用户 Web 和用户 API 反代；后台镜像内置 Nginx、后台 Web、随机短路径和管理 API 反代。用户端 `apps/user-web/index.html` 改为单页状态机：`auth` 视图负责登录/注册，`app` 视图负责概览、套餐、购买、兑换、隧道配置和流量；未登录时不渲染隧道配置表单。
 
@@ -14,7 +14,7 @@
 - 服务端后台和用户端必须分开，不再共用一个明显的 `/admin/` 入口。
 - 用户端和后台端各自使用一个 Docker 镜像/容器入口，不再用额外 sidecar Nginx 组合出入口。
 - 用户端不能把全部功能堆在主页；未登录只能看到登录/注册/购买说明，登录后才能配置隧道。
-- 后台地址换成一小段随机字符。
+- 后台使用独立端口根路径直达，不再叠加路径。
 - 保留现有易支付 V1 接入、套餐购买、兑换码、隧道创建、测速和 E2E 能力。
 - 不能提交真实支付密钥或运行时 `.env.fnos`。
 
@@ -53,13 +53,13 @@
 
 **Interfaces:**
 - User URL: `http://192.168.110.56:${FNOS_USER_HTTP_PORT}/`
-- Admin URL: `http://192.168.110.56:${FNOS_ADMIN_HTTP_PORT}/${FNOS_ADMIN_PATH}/`
+- Admin URL: `http://192.168.110.56:${FNOS_ADMIN_HTTP_PORT}/`
 - API remains available to both Nginx entrypoints under `/api/`.
 
-- [ ] Step 1: Choose a short random admin path, for example `k9p4x7`.
+- [ ] Step 1: Use the dedicated admin port root path directly.
 - [ ] Step 2: Build `user-portal` and `admin-portal` as the only two frontend entry containers.
 - [ ] Step 3: Configure user portal image so `/admin/` and the random admin path are not reachable from the user port.
-- [ ] Step 4: Configure admin portal image so only `/${FNOS_ADMIN_PATH}/` serves admin UI; `/` and `/admin/` do not expose the backend.
+- [ ] Step 4: Configure admin portal image so `/` serves admin UI directly on the dedicated admin port.
 - [ ] Step 5: Run `docker compose -f deploy/docker-compose.fnos.yml --env-file deploy/.env.fnos config`.
 
 ## Task 2: Rebuild User Flow
@@ -91,7 +91,7 @@
 - Smoke checks:
   - User URL `/` returns user login page.
   - User URL `/admin/` returns 404.
-  - Admin URL `/${FNOS_ADMIN_PATH}/` returns admin page.
+  - Admin URL `/` returns admin page.
   - Admin URL `/admin/` returns 404.
   - User login works.
   - Logged-in user can list plans and create payment order.
@@ -101,5 +101,5 @@
 
 - Requirement 1 covered by Task 1: user portal and admin portal are separate Docker images/containers, with no `/admin/` on user port.
 - Requirement 2 covered by Task 2: unauthenticated auth view and authenticated app dashboard.
-- Requirement 3 covered by Task 1: random short admin path in runtime env and route.
+- Requirement 3 revised by user: dedicated admin port root path now opens admin directly, with no extra path.
 - No real payment key is added to tracked files.

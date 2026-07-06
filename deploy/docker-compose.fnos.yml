@@ -17,8 +17,6 @@ services:
     container_name: frp-fnos-admin-portal
     ports:
       - "${FNOS_ADMIN_HTTP_PORT:-18189}:80"
-    environment:
-      FNOS_ADMIN_PATH: ${FNOS_ADMIN_PATH}
     depends_on:
       - api-server
     restart: unless-stopped
