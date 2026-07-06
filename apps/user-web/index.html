@@ -7,227 +7,407 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<section id="authView" class="public-shell">
-  <header class="public-nav">
-    <div class="brand"><div class="logo"></div><span>FRP Tunnel</span></div>
-    <nav>
-      <a href="#scenes">应用场景</a>
-      <a href="#pricing">套餐</a>
-      <a href="#loginCard">登录</a>
-    </nav>
-  </header>
-
-  <main class="public-main">
-    <section class="hero-grid">
-      <div class="hero-copy">
-        <div class="eyebrow">Private network access</div>
-        <h1>把本地服务安全映射到公网。</h1>
-        <p>适合飞牛 NAS、远程桌面、Minecraft 联机、开发调试和临时演示。先注册/登录，再进入控制台创建隧道。</p>
-        <div class="hero-actions">
-          <a class="btn primary" href="#loginCard">登录 / 注册</a>
-          <a class="btn secondary" href="#pricing">查看套餐</a>
-        </div>
-      </div>
-      <div class="login-card" id="loginCard">
-        <div class="card-head">
-          <span class="badge blue">Account</span>
-          <h2>进入用户控制台</h2>
-          <p>登录后才能购买套餐、兑换套餐和配置隧道。</p>
-        </div>
-        <div class="form">
-          <input class="input" id="apiBase" placeholder="API 地址，默认当前站点">
-          <input class="input" id="email" placeholder="邮箱">
-          <input class="input" id="password" type="password" placeholder="密码">
-          <div class="inline-form">
-            <input class="input" id="code" placeholder="验证码">
-            <button class="btn secondary" id="sendCodeBtn">发送验证码</button>
-          </div>
-          <div class="inline-actions">
-            <button class="btn secondary" id="registerBtn">注册账号</button>
-            <button class="btn primary" id="loginBtn">登录控制台</button>
-          </div>
-        </div>
-        <div class="mini-log" id="authLog">请先登录或注册。</div>
-      </div>
-    </section>
-
-    <section class="feature-strip" id="scenes">
-      <article><strong>NAS 访问</strong><span>飞牛/群晖服务外网访问</span></article>
-      <article><strong>游戏联机</strong><span>Minecraft / 私服端口映射</span></article>
-      <article><strong>远程桌面</strong><span>RDP、SSH、Web 管理面板</span></article>
-      <article><strong>开发调试</strong><span>Webhook、Demo、测试环境</span></article>
-    </section>
-
-    <section class="pricing-preview" id="pricing">
-      <div>
-        <div class="eyebrow">Pricing</div>
-        <h2>登录后选择套餐并支付</h2>
-        <p>套餐购买和兑换码入口在控制台内，避免未登录时误配置隧道。</p>
-      </div>
-      <div class="price-card">
-        <span>默认套餐</span>
-        <strong>¥9.90</strong>
-        <small>100GB 流量 / 10.24Mbps / TCP UDP HTTP HTTPS</small>
-      </div>
-    </section>
-  </main>
-</section>
-
-<section id="appView" class="app-shell" hidden>
-  <aside class="side">
-    <div class="brand"><div class="logo"></div><span>FRP Panel</span></div>
-    <nav class="nav">
-      <a class="active" href="#overview">概览</a>
-      <a href="#plans">套餐购买</a>
-      <a href="#tunnels">隧道配置</a>
-      <a href="#traffic">流量上报</a>
-    </nav>
-  </aside>
-  <main class="main">
-    <div class="top">
-      <div>
-        <div class="eyebrow">User console</div>
-        <h1 class="title">我的内网穿透</h1>
-        <p class="subtitle">已登录后可购买套餐、兑换套餐、创建隧道和查看状态。</p>
-      </div>
-      <div class="top-actions"><button class="btn secondary" id="refreshBtn">刷新</button><button class="btn danger" id="logoutBtn">退出</button></div>
-    </div>
-
-    <section class="grid cards" id="overview">
-      <div class="card"><div class="label">登录邮箱</div><div class="metric" id="emailState">-</div><span class="badge green" id="loginBadge">logged in</span></div>
-      <div class="card"><div class="label">套餐</div><div class="metric" id="planState">无</div><span class="badge red" id="subBadge">inactive</span></div>
-      <div class="card"><div class="label">剩余流量</div><div class="metric" id="trafficState">-</div><span class="badge blue" id="todayTrafficState">today -</span></div>
-      <div class="card"><div class="label">隧道数量</div><div class="metric" id="tunnelCount">0</div><span class="badge green">tunnels</span></div>
-    </section>
-
-    <section class="split" id="plans" style="margin-top:16px">
-      <div class="card hero">
-        <h2>购买套餐</h2>
-        <p class="subtitle">选择套餐后跳转到易支付收银台，支付成功自动开通。</p>
-        <table>
-          <thead><tr><th>套餐</th><th>价格</th><th>流量</th><th>限速</th><th>操作</th></tr></thead>
-          <tbody id="planBuyRows"><tr><td colspan="5">加载中</td></tr></tbody>
-        </table>
-      </div>
-      <div class="card">
-        <h2>兑换套餐</h2>
-        <p class="subtitle">如果你已有兑换码，也可以直接兑换。</p>
-        <div class="form"><input class="input" id="redeemCode" placeholder="兑换码"><button class="btn primary" id="redeemBtn">兑换</button></div>
-      </div>
-    </section>
-
-    <section class="split" id="tunnels" style="margin-top:16px">
-      <div class="card">
-        <h2>创建隧道</h2>
-        <div class="form">
-          <input class="input" id="tunnelName" value="web" placeholder="隧道名称">
-          <select class="input" id="tunnelType"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="tcp">TCP</option><option value="udp">UDP</option></select>
-          <input class="input" id="localHost" value="127.0.0.1" placeholder="本地地址">
-          <input class="input" id="localPort" value="8080" placeholder="本地端口">
-          <input class="input" id="domain" placeholder="HTTP/HTTPS 域名">
-          <input class="input" id="bandwidthLimit" value="0" min="0" step="0.001" placeholder="隧道限速 Mbps，0 表示继承套餐">
-          <p class="field-hint" id="bandwidthLimitHint">0 表示继承套餐限速</p>
-          <button class="btn primary" id="createTunnelBtn">创建隧道</button>
-        </div>
-        <div class="code" id="cnameHint">HTTP/HTTPS: app.user.com CNAME frp.example.com</div>
-      </div>
-      <div class="card">
-        <h2>我的隧道</h2>
-        <table>
-          <thead><tr><th>名称</th><th>协议</th><th>入口</th><th>限速</th><th>状态</th></tr></thead>
-          <tbody id="tunnelRows"><tr><td colspan="5">暂无数据</td></tr></tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="card" id="traffic" style="margin-top:16px">
-      <h2>流量上报 / 操作日志</h2>
-      <div class="traffic-grid">
-        <div class="form">
-          <input class="input" id="reportTunnelId" placeholder="隧道 ID，可留空">
-          <input class="input" id="bytesIn" value="1024" placeholder="入站 bytes">
-          <input class="input" id="bytesOut" value="2048" placeholder="出站 bytes">
-          <button class="btn secondary" id="reportTrafficBtn">上报流量</button>
-        </div>
-        <div class="log" id="logBox">ready</div>
-      </div>
-    </section>
-  </main>
-</section>
+<div id="app"></div>
 <script>
 const $ = id => document.getElementById(id);
-let token = localStorage.getItem('token') || '';
-let apiBase = localStorage.getItem('apiBase') || location.origin;
-let hasActiveSubscription = false;
-$('apiBase').value = apiBase;
-function base() { apiBase = $('apiBase').value || location.origin; localStorage.setItem('apiBase', apiBase); return apiBase.replace(/\/$/, ''); }
-function writeAuth(x) { $('authLog').textContent = typeof x === 'string' ? x : JSON.stringify(x, null, 2); }
-function log(x) { $('logBox').textContent = (typeof x === 'string' ? x : JSON.stringify(x, null, 2)) + '\n' + $('logBox').textContent; }
-async function api(path, opts = {}) {
-  const headers = { 'Content-Type': 'application/json' };
-  if (token) headers.Authorization = 'Bearer ' + token;
-  const r = await fetch(base() + path, { headers, ...opts });
-  const j = await r.json().catch(() => ({ success: false, message: r.statusText }));
-  if (!r.ok || j.success === false) throw new Error(j.message || r.statusText);
-  return j.data;
+const app = $('app');
+const state = {
+  token: localStorage.getItem('token') || '',
+  apiBase: localStorage.getItem('apiBase') || location.origin,
+  me: null,
+  subscription: null,
+  traffic: null,
+  tunnels: [],
+  plans: [],
+  activeSubscription: false,
+  logLines: ['ready'],
+  loading: false,
+};
+
+const navItems = [
+  ['/app/overview', '概览', '总览资源与状态'],
+  ['/app/billing', '套餐与支付', '购买、兑换和续费'],
+  ['/app/tunnels', '隧道管理', '创建与查看映射'],
+  ['/app/traffic', '流量与日志', '用量上报与操作记录'],
+  ['/app/settings', '账户设置', '登录信息与 API 地址'],
+];
+
+function h(value) {
+  return String(value ?? '').replace(/[&<>'"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch]));
 }
-function showAuth() { $('authView').hidden = false; $('appView').hidden = true; }
-function showApp() { $('authView').hidden = true; $('appView').hidden = false; refresh(); }
-function requireAuth() { if (!token) { showAuth(); return false; } showApp(); return true; }
-function fmtBytes(n) { if (!n) return '-'; return (n / 1024 / 1024 / 1024).toFixed(1) + ' GB'; }
-function fmtMoney(cents) { return '¥' + ((Number(cents)||0) / 100).toFixed(2); }
-function mbpsToKbps(v) { return (!v || v < 0) ? 0 : Math.round(v * 1000); }
+function currentRoute() { return location.hash.replace(/^#/, '') || '/'; }
+function navigate(route) { if (currentRoute() === route) render(); else location.hash = route; }
+function normalizeRoute(route) {
+  if (!route || route === '/') return '/';
+  if (route.startsWith('/app') && !state.token) return '/login';
+  if ((route === '/login' || route === '/register') && state.token) return '/app/overview';
+  if (route === '/app') return '/app/overview';
+  if (route.startsWith('/app') && !navItems.some(([r]) => r === route)) return '/app/overview';
+  return route;
+}
+function saveApiBaseFrom(id = 'apiBase') {
+  const input = $(id);
+  if (input) state.apiBase = input.value || location.origin;
+  localStorage.setItem('apiBase', state.apiBase);
+  return state.apiBase.replace(/\/$/, '');
+}
+async function api(path, opts = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+  if (state.token) headers.Authorization = 'Bearer ' + state.token;
+  const response = await fetch(saveApiBaseFrom() + path, { ...opts, headers });
+  const json = await response.json().catch(() => ({ success: false, message: response.statusText }));
+  if (!response.ok || json.success === false) throw new Error(json.message || response.statusText);
+  return json.data;
+}
+function pushLog(line) {
+  const text = typeof line === 'string' ? line : JSON.stringify(line, null, 2);
+  state.logLines.unshift(new Date().toLocaleTimeString() + '  ' + text);
+  state.logLines = state.logLines.slice(0, 30);
+  const box = $('logBox');
+  if (box) box.textContent = state.logLines.join('\n');
+}
+function fmtBytes(n) {
+  n = Number(n) || 0;
+  if (n <= 0) return '-';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  return (i === 0 ? n.toFixed(0) : n.toFixed(1)) + ' ' + units[i];
+}
+function fmtMoney(cents) { return '¥' + ((Number(cents) || 0) / 100).toFixed(2); }
 function fmtMbpsFromKbps(v) { return (!v || v < 0) ? '-' : (v / 1000).toFixed(2) + ' Mbps'; }
 function fmtMBpsFromKbps(v) { return (!v || v < 0) ? '-' : (v / 8000).toFixed(2) + ' MB/s'; }
-function fmtLimit(t) { const effective = t.effective_bandwidth_limit_kbps || t.bandwidth_limit_kbps || 0; return effective ? fmtMbpsFromKbps(effective) + ' / ' + fmtMBpsFromKbps(effective) : '继承/不限'; }
-function updateBandwidthLimitHint() { const limit = Number($('bandwidthLimit').value) || 0; $('bandwidthLimitHint').textContent = limit > 0 ? '≈ ' + (limit / 8).toFixed(3) + ' MB/s' : '0 表示继承套餐限速'; }
-async function refresh() {
-  if (!token) return showAuth();
-  try {
-    const me = await api('/api/auth/me');
-    $('emailState').textContent = me.email;
+function mbpsToKbps(v) { return (!v || v < 0) ? 0 : Math.round(v * 1000); }
+function fmtLimit(t) {
+  const effective = t.effective_bandwidth_limit_kbps || t.bandwidth_limit_kbps || 0;
+  return effective ? `${fmtMbpsFromKbps(effective)} / ${fmtMBpsFromKbps(effective)}` : '继承套餐';
+}
+function shellHeader(kind = 'public') {
+  return `<header class="site-header ${kind === 'auth' ? 'auth-header' : ''}">
+    <a class="brand" href="#/" data-route="/" aria-label="返回首页"><span class="logo-mark"></span><span><strong>FRP Tunnel</strong><small>Nas & Game Access</small></span></a>
+    <nav class="site-nav" aria-label="主导航">
+      <a href="#/" data-route="/">首页</a>
+      <a href="#/login" data-route="/login">登录</a>
+      <a class="nav-pill" href="#/register" data-route="/register">注册</a>
+    </nav>
+  </header>`;
+}
+function footer() {
+  return `<footer class="site-footer"><span>FRP Tunnel Platform</span><span>独立用户端 · 后台端分离部署</span></footer>`;
+}
+function bindRouteLinks(root = document) {
+  root.querySelectorAll('[data-route]').forEach(el => {
+    el.addEventListener('click', event => {
+      event.preventDefault();
+      navigate(el.dataset.route);
+    });
+  });
+}
+
+function renderLanding() {
+  app.innerHTML = `<div class="public-page">
+    ${shellHeader('public')}
+    <main class="landing-main">
+      <section class="hero-panel">
+        <div class="hero-copy">
+          <span class="eyebrow">Private network access</span>
+          <h1>让飞牛 NAS 和本地服务，像云服务一样可访问。</h1>
+          <p>参考成熟 FRP 平台动线：先了解服务，再独立登录/注册，登录后进入控制台管理套餐、支付、隧道和流量。</p>
+          <div class="hero-actions">
+            <a class="btn primary" href="#/login" data-route="/login">登录控制台</a>
+            <a class="btn secondary" href="#/register" data-route="/register">注册账号</a>
+          </div>
+        </div>
+        <div class="hero-console-card" aria-label="产品能力预览">
+          <div class="window-dots"><i></i><i></i><i></i></div>
+          <div class="preview-row"><span>HTTP / HTTPS</span><strong>域名映射</strong></div>
+          <div class="preview-row"><span>TCP / UDP</span><strong>游戏与远程桌面</strong></div>
+          <div class="preview-row"><span>Billing</span><strong>易支付套餐开通</strong></div>
+          <div class="preview-meter"><b style="width:72%"></b></div>
+        </div>
+      </section>
+      <section class="scene-grid" id="scenes">
+        <article><b>NAS 外网访问</b><span>飞牛、群晖、WebDAV、相册服务</span></article>
+        <article><b>开发联调</b><span>Webhook、本地 Demo、测试环境</span></article>
+        <article><b>游戏联机</b><span>Minecraft、Steam 服务器、UDP 服务</span></article>
+        <article><b>远程运维</b><span>SSH、RDP、Home Assistant 面板</span></article>
+      </section>
+      <section class="landing-band">
+        <div><span class="eyebrow">Workflow</span><h2>正常系统动线，不再把所有模块挤在一屏。</h2></div>
+        <ol>
+          <li>访问首页了解服务</li><li>进入独立登录/注册页</li><li>登录后进入控制台</li><li>侧边栏切换具体业务页面</li>
+        </ol>
+      </section>
+    </main>
+    ${footer()}
+  </div>`;
+  bindRouteLinks(app);
+}
+
+function renderAuth(mode) {
+  const isRegister = mode === 'register';
+  app.innerHTML = `<div class="auth-page">
+    ${shellHeader('auth')}
+    <main class="auth-main">
+      <section class="auth-visual">
+        <span class="eyebrow">${isRegister ? 'Create account' : 'Password login'}</span>
+        <h1>${isRegister ? '注册后再创建隧道。' : '登录后进入用户控制台。'}</h1>
+        <p>${isRegister ? '邮箱验证码用于注册验证。开发环境会返回 dev_code，当前可直接使用 123456。' : '控制台内才显示套餐支付、兑换码、隧道管理和流量上报。'}</p>
+        <div class="auth-steps"><span>01 独立认证</span><span>02 控制台路由</span><span>03 分模块管理</span></div>
+      </section>
+      <section class="auth-card" aria-label="${isRegister ? '注册账号' : '密码登录'}">
+        <div class="card-title">
+          <span class="badge blue">${isRegister ? 'Register' : 'Login'}</span>
+          <h2>${isRegister ? '创建账号' : '密码登录'}</h2>
+          <p>${isRegister ? '已有账号？' : '还没有账号？'} <a href="#/${isRegister ? 'login' : 'register'}" data-route="/${isRegister ? 'login' : 'register'}">${isRegister ? '去登录' : '立即注册'}</a></p>
+        </div>
+        <div class="form-stack">
+          <label>API 地址<input class="input" id="apiBase" value="${h(state.apiBase)}" placeholder="默认当前站点"></label>
+          <label>邮箱<input class="input" id="email" type="email" autocomplete="email" placeholder="you@example.com"></label>
+          <label>密码<input class="input" id="password" type="password" autocomplete="${isRegister ? 'new-password' : 'current-password'}" placeholder="至少 4 位"></label>
+          ${isRegister ? `<label>验证码</label><div class="inline-form"><input class="input" id="code" placeholder="邮箱验证码"><button class="btn secondary" id="sendCodeBtn">发送验证码</button></div>` : ''}
+          <button class="btn primary full" id="${isRegister ? 'registerBtn' : 'loginBtn'}">${isRegister ? '注册账号' : '登录控制台'}</button>
+        </div>
+        <div class="mini-log" id="authLog">${isRegister ? '填写邮箱后发送验证码。' : '请输入邮箱和密码。'}</div>
+      </section>
+    </main>
+    ${footer()}
+  </div>`;
+  bindRouteLinks(app);
+  $('apiBase').addEventListener('change', () => saveApiBaseFrom('apiBase'));
+  if (isRegister) bindRegisterActions(); else bindLoginActions();
+}
+function writeAuth(message) { const el = $('authLog'); if (el) el.textContent = typeof message === 'string' ? message : JSON.stringify(message, null, 2); }
+function bindLoginActions() {
+  $('loginBtn').onclick = async () => {
     try {
-      const sub = await api('/api/user/subscription');
-      hasActiveSubscription = sub.status === 'active';
-      $('planState').textContent = sub.plan_name;
-      $('subBadge').textContent = sub.status;
-      $('subBadge').className = 'badge green';
-      $('trafficState').textContent = fmtBytes(sub.traffic_limit_bytes - sub.traffic_used_bytes);
-      const tr = await api('/api/user/traffic').catch(() => null);
-      if (tr) { $('trafficState').textContent = fmtBytes(tr.traffic_left_bytes); $('todayTrafficState').textContent = 'today ' + fmtBytes(tr.today_bytes); }
+      const data = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: $('email').value, password: $('password').value }) });
+      state.token = data.access_token;
+      localStorage.setItem('token', state.token);
+      pushLog('登录成功');
+      navigate('/app/overview');
+    } catch (error) { writeAuth(error.message); }
+  };
+}
+function bindRegisterActions() {
+  $('sendCodeBtn').onclick = async () => {
+    try {
+      const data = await api('/api/auth/send-email-code', { method: 'POST', body: JSON.stringify({ email: $('email').value, purpose: 'register' }) });
+      if (data && data.dev_code) $('code').value = data.dev_code;
+      writeAuth('验证码已发送' + (data && data.dev_code ? `：${data.dev_code}` : '。'));
+    } catch (error) { writeAuth(error.message); }
+  };
+  $('registerBtn').onclick = async () => {
+    try {
+      await api('/api/auth/register', { method: 'POST', body: JSON.stringify({ email: $('email').value, password: $('password').value, code: $('code').value }) });
+      writeAuth('注册成功，正在进入登录页。');
+      setTimeout(() => navigate('/login'), 450);
+    } catch (error) { writeAuth(error.message); }
+  };
+}
+
+async function loadDashboardData() {
+  if (!state.token) return;
+  state.loading = true;
+  try {
+    state.me = await api('/api/auth/me');
+    try {
+      state.subscription = await api('/api/user/subscription');
+      state.activeSubscription = state.subscription.status === 'active';
     } catch (_) {
-      $('planState').textContent = '未开通'; $('subBadge').textContent = 'inactive'; $('subBadge').className = 'badge red'; $('trafficState').textContent = '-';
-      hasActiveSubscription = false;
+      state.subscription = null;
+      state.activeSubscription = false;
     }
-    await loadPlans();
-    $('createTunnelBtn').disabled = !hasActiveSubscription;
-    $('createTunnelBtn').textContent = hasActiveSubscription ? '创建隧道' : '请先购买或兑换套餐';
-    const tunnels = (await api('/api/tunnels')) || [];
-    $('tunnelCount').textContent = tunnels.length;
-    $('tunnelRows').innerHTML = tunnels.map(t => `<tr><td>${t.name}</td><td>${t.type}</td><td>${t.public_url || ''}<br><small>${t.local_host}:${t.local_port}</small></td><td>${fmtLimit(t)}</td><td><span class="badge orange">${t.status}</span></td></tr>`).join('') || '<tr><td colspan="5">暂无数据</td></tr>';
-  } catch (e) {
-    log('刷新失败: ' + e.message);
-    if (/认证|登录|Unauthorized|UNAUTHORIZED/i.test(e.message)) { token = ''; localStorage.removeItem('token'); showAuth(); }
+    state.traffic = await api('/api/user/traffic').catch(() => null);
+    state.plans = (await api('/api/user/plans').catch(() => [])) || [];
+    state.tunnels = (await api('/api/tunnels').catch(() => [])) || [];
+  } finally {
+    state.loading = false;
   }
 }
-async function loadPlans() {
-  const plans = (await api('/api/user/plans')) || [];
-  $('planBuyRows').innerHTML = plans.map(p => `<tr><td>${p.name}<br><small>${p.description || ''}</small></td><td>${fmtMoney(p.price_cents)}</td><td>${fmtBytes(p.traffic_limit_bytes)}</td><td>${fmtMbpsFromKbps(p.bandwidth_limit_kbps)}</td><td><button class="btn primary" onclick="buyPlan(${p.id})">去支付</button></td></tr>`).join('') || '<tr><td colspan="5">暂无可购买套餐</td></tr>';
+async function renderConsole(route) {
+  app.innerHTML = consoleSkeleton(route, '<div class="page-card skeleton">加载控制台数据...</div>');
+  bindConsoleActions();
+  try {
+    await loadDashboardData();
+    app.innerHTML = consoleSkeleton(route, renderConsolePage(route));
+    bindConsoleActions();
+    bindPageActions(route);
+  } catch (error) {
+    if (/认证|登录|Unauthorized|UNAUTHORIZED/i.test(error.message)) {
+      state.token = '';
+      localStorage.removeItem('token');
+      return navigate('/login');
+    }
+    app.innerHTML = consoleSkeleton(route, `<div class="page-card error-card"><h2>加载失败</h2><p>${h(error.message)}</p><button class="btn primary" id="retryBtn">重试</button></div>`);
+    bindConsoleActions();
+    $('retryBtn').onclick = render;
+  }
 }
-async function buyPlan(planId) {
-  try { const order = await api('/api/payments/epay/orders', { method: 'POST', body: JSON.stringify({ plan_id: planId, pay_type: 'alipay' }) }); log('订单已创建：' + order.out_trade_no + '，金额 ¥' + order.money); location.href = order.pay_url; } catch (e) { log(e.message); }
+function consoleSkeleton(route, body) {
+  const active = navItems.find(([r]) => r === route) || navItems[0];
+  return `<div class="console-shell">
+    <aside class="console-side">
+      <a class="brand console-brand" href="#/app/overview" data-route="/app/overview"><span class="logo-mark"></span><span><strong>FRP Panel</strong><small>${h(state.me?.email || 'User console')}</small></span></a>
+      <nav class="console-nav" aria-label="控制台导航">
+        ${navItems.map(([r, label, desc]) => `<a class="${r === route ? 'active' : ''}" href="#${r}" data-route="${r}"><b>${label}</b><small>${desc}</small></a>`).join('')}
+      </nav>
+    </aside>
+    <main class="console-main">
+      <header class="console-top">
+        <div><span class="eyebrow">User console</span><h1>${h(active[1])}</h1><p>${h(active[2])}</p></div>
+        <div class="top-actions"><button class="btn secondary" id="refreshBtn">刷新</button><button class="btn danger" id="logoutBtn">退出</button></div>
+      </header>
+      <section class="console-page">${body}</section>
+    </main>
+  </div>`;
 }
-$('sendCodeBtn').onclick = async () => { try { const d = await api('/api/auth/send-email-code', { method: 'POST', body: JSON.stringify({ email: $('email').value, purpose: 'register' }) }); $('code').value = d.dev_code || ''; writeAuth('验证码已发送'); } catch (e) { writeAuth(e.message); } };
-$('registerBtn').onclick = async () => { try { await api('/api/auth/register', { method: 'POST', body: JSON.stringify({ email: $('email').value, password: $('password').value, code: $('code').value }) }); writeAuth('注册成功，现在可以登录。'); } catch (e) { writeAuth(e.message); } };
-$('loginBtn').onclick = async () => { try { const d = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: $('email').value, password: $('password').value }) }); token = d.access_token; localStorage.setItem('token', token); showApp(); } catch (e) { writeAuth(e.message); } };
-$('logoutBtn').onclick = () => { token = ''; localStorage.removeItem('token'); showAuth(); };
-$('redeemBtn').onclick = async () => { try { log(await api('/api/user/redeem', { method: 'POST', body: JSON.stringify({ code: $('redeemCode').value }) })); refresh(); } catch (e) { log(e.message); } };
-$('createTunnelBtn').onclick = async () => { try { if (!hasActiveSubscription) { log('请先购买套餐或兑换套餐，再创建隧道。'); return; } const body = { name: $('tunnelName').value, type: $('tunnelType').value, local_host: $('localHost').value, local_port: Number($('localPort').value), domain: $('domain').value, use_https: $('tunnelType').value === 'https', bandwidth_limit_kbps: mbpsToKbps(Number($('bandwidthLimit').value) || 0) }; const created = await api('/api/tunnels', { method: 'POST', body: JSON.stringify(body) }); log('隧道创建成功：' + created.name); refresh(); } catch (e) { log(e.message); } };
-$('reportTrafficBtn').onclick = async () => { try { log(await api('/api/client/traffic', { method: 'POST', body: JSON.stringify({ reports: [{ tunnel_id: Number($('reportTunnelId').value) || 0, bytes_in: Number($('bytesIn').value) || 0, bytes_out: Number($('bytesOut').value) || 0 }] }) })); refresh(); } catch (e) { log(e.message); } };
-$('refreshBtn').onclick = refresh;
-$('bandwidthLimit').addEventListener('input', updateBandwidthLimitHint);
-updateBandwidthLimitHint();
-requireAuth();
+function bindConsoleActions() {
+  bindRouteLinks(app);
+  const refreshBtn = $('refreshBtn');
+  if (refreshBtn) refreshBtn.onclick = render;
+  const logoutBtn = $('logoutBtn');
+  if (logoutBtn) logoutBtn.onclick = () => {
+    state.token = '';
+    state.me = null;
+    localStorage.removeItem('token');
+    navigate('/login');
+  };
+}
+function renderConsolePage(route) {
+  if (route === '/app/billing') return renderBillingPage();
+  if (route === '/app/tunnels') return renderTunnelsPage();
+  if (route === '/app/traffic') return renderTrafficPage();
+  if (route === '/app/settings') return renderSettingsPage();
+  return renderOverviewPage();
+}
+function renderOverviewPage() {
+  const sub = state.subscription;
+  const trafficLeft = state.traffic?.traffic_left_bytes ?? (sub ? sub.traffic_limit_bytes - sub.traffic_used_bytes : 0);
+  return `<div class="metric-grid">
+    <article class="metric-card"><span>登录邮箱</span><strong>${h(state.me?.email || '-')}</strong><em class="badge green">logged in</em></article>
+    <article class="metric-card"><span>套餐状态</span><strong>${h(sub?.plan_name || '未开通')}</strong><em class="badge ${state.activeSubscription ? 'green' : 'red'}">${h(sub?.status || 'inactive')}</em></article>
+    <article class="metric-card"><span>剩余流量</span><strong>${fmtBytes(trafficLeft)}</strong><em class="badge blue">today ${fmtBytes(state.traffic?.today_bytes)}</em></article>
+    <article class="metric-card"><span>隧道数量</span><strong>${state.tunnels.length}</strong><em class="badge orange">tunnels</em></article>
+  </div>
+  <div class="two-column">
+    <section class="page-card accent"><h2>下一步建议</h2><p>${state.activeSubscription ? '你已经有可用套餐，可以进入隧道管理创建 HTTP/TCP/UDP 映射。' : '先到“套餐与支付”购买或兑换套餐，再创建隧道。'}</p><a class="btn primary" href="#/${state.activeSubscription ? 'app/tunnels' : 'app/billing'}" data-route="/${state.activeSubscription ? 'app/tunnels' : 'app/billing'}">${state.activeSubscription ? '创建隧道' : '开通套餐'}</a></section>
+    <section class="page-card"><h2>最近隧道</h2>${tunnelTable(state.tunnels.slice(0, 5))}</section>
+  </div>`;
+}
+function renderBillingPage() {
+  return `<div class="two-column wide-left">
+    <section class="page-card"><h2>购买套餐</h2><p class="muted">选择套餐后跳转易支付收银台，支付成功由通知接口自动开通。</p>${plansTable()}</section>
+    <section class="page-card"><h2>兑换套餐</h2><p class="muted">已有兑换码可直接激活。</p><div class="form-stack"><input class="input" id="redeemCode" placeholder="兑换码"><button class="btn primary" id="redeemBtn">兑换</button></div><div class="mini-log compact" id="billingLog">等待操作</div></section>
+  </div>`;
+}
+function plansTable() {
+  if (!state.plans.length) return '<div class="empty">暂无可购买套餐</div>';
+  return `<div class="table-wrap"><table><thead><tr><th>套餐</th><th>价格</th><th>流量</th><th>限速</th><th>操作</th></tr></thead><tbody>${state.plans.map(plan => `<tr><td><b>${h(plan.name)}</b><small>${h(plan.description || '')}</small></td><td>${fmtMoney(plan.price_cents)}</td><td>${fmtBytes(plan.traffic_limit_bytes)}</td><td>${fmtMbpsFromKbps(plan.bandwidth_limit_kbps)}</td><td><button class="btn primary small" data-buy-plan="${plan.id}">去支付</button></td></tr>`).join('')}</tbody></table></div>`;
+}
+function renderTunnelsPage() {
+  return `<div class="two-column wide-left">
+    <section class="page-card"><h2>我的隧道</h2>${tunnelTable(state.tunnels)}</section>
+    <section class="page-card"><h2>创建隧道</h2><p class="muted">${state.activeSubscription ? '填写本地服务信息后创建映射。' : '当前未开通套餐，创建按钮已禁用。'}</p><div class="form-stack">
+      <input class="input" id="tunnelName" value="web" placeholder="隧道名称">
+      <select class="input" id="tunnelType"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="tcp">TCP</option><option value="udp">UDP</option></select>
+      <input class="input" id="localHost" value="127.0.0.1" placeholder="本地地址">
+      <input class="input" id="localPort" value="8080" placeholder="本地端口">
+      <input class="input" id="domain" placeholder="HTTP/HTTPS 域名">
+      <input class="input" id="bandwidthLimit" value="0" min="0" step="0.001" placeholder="隧道限速 Mbps，0 表示继承套餐">
+      <p class="field-hint" id="bandwidthLimitHint">0 表示继承套餐限速</p>
+      <button class="btn primary full" id="createTunnelBtn" ${state.activeSubscription ? '' : 'disabled'}>${state.activeSubscription ? '创建隧道' : '请先购买或兑换套餐'}</button>
+    </div><div class="code">HTTP/HTTPS: app.user.com CNAME frp.example.com</div></section>
+  </div>`;
+}
+function tunnelTable(tunnels) {
+  if (!tunnels.length) return '<div class="empty">暂无隧道</div>';
+  return `<div class="table-wrap"><table><thead><tr><th>名称</th><th>协议</th><th>入口</th><th>限速</th><th>状态</th></tr></thead><tbody>${tunnels.map(t => `<tr><td><b>${h(t.name)}</b></td><td>${h(t.type)}</td><td>${h(t.public_url || '')}<small>${h(t.local_host)}:${h(t.local_port)}</small></td><td>${fmtLimit(t)}</td><td><span class="badge orange">${h(t.status)}</span></td></tr>`).join('')}</tbody></table></div>`;
+}
+function renderTrafficPage() {
+  return `<div class="two-column wide-left">
+    <section class="page-card"><h2>流量上报</h2><p class="muted">用于客户端或测试环境上报隧道流量。</p><div class="form-stack">
+      <input class="input" id="reportTunnelId" placeholder="隧道 ID，可留空">
+      <input class="input" id="bytesIn" value="1024" placeholder="入站 bytes">
+      <input class="input" id="bytesOut" value="2048" placeholder="出站 bytes">
+      <button class="btn secondary full" id="reportTrafficBtn">上报流量</button>
+    </div></section>
+    <section class="page-card"><h2>操作日志</h2><div class="log" id="logBox">${h(state.logLines.join('\n'))}</div></section>
+  </div>`;
+}
+function renderSettingsPage() {
+  return `<div class="two-column">
+    <section class="page-card"><h2>账户信息</h2><dl class="info-list"><dt>邮箱</dt><dd>${h(state.me?.email || '-')}</dd><dt>套餐</dt><dd>${h(state.subscription?.plan_name || '未开通')}</dd><dt>状态</dt><dd>${h(state.subscription?.status || 'inactive')}</dd></dl></section>
+    <section class="page-card"><h2>连接设置</h2><div class="form-stack"><label>API 地址<input class="input" id="apiBase" value="${h(state.apiBase)}"></label><button class="btn secondary" id="saveApiBaseBtn">保存 API 地址</button><button class="btn danger" id="logoutBtn2">退出当前账号</button></div></section>
+  </div>`;
+}
+function bindPageActions(route) {
+  bindRouteLinks(app);
+  if (route === '/app/billing') {
+    document.querySelectorAll('[data-buy-plan]').forEach(button => {
+      button.onclick = async () => {
+        try {
+          const order = await api('/api/payments/epay/orders', { method: 'POST', body: JSON.stringify({ plan_id: Number(button.dataset.buyPlan), pay_type: 'alipay' }) });
+          pushLog('订单已创建：' + order.out_trade_no);
+          location.href = order.pay_url;
+        } catch (error) { const el = $('billingLog'); if (el) el.textContent = error.message; }
+      };
+    });
+    const redeemBtn = $('redeemBtn');
+    if (redeemBtn) redeemBtn.onclick = async () => {
+      try { const data = await api('/api/user/redeem', { method: 'POST', body: JSON.stringify({ code: $('redeemCode').value }) }); const el = $('billingLog'); if (el) el.textContent = '兑换成功：' + JSON.stringify(data); render(); } catch (error) { const el = $('billingLog'); if (el) el.textContent = error.message; }
+    };
+  }
+  if (route === '/app/tunnels') {
+    const limit = $('bandwidthLimit');
+    if (limit) limit.addEventListener('input', updateBandwidthLimitHint);
+    updateBandwidthLimitHint();
+    const create = $('createTunnelBtn');
+    if (create) create.onclick = async () => {
+      try {
+        if (!state.activeSubscription) { pushLog('请先购买套餐或兑换套餐，再创建隧道。'); return; }
+        const body = { name: $('tunnelName').value, type: $('tunnelType').value, local_host: $('localHost').value, local_port: Number($('localPort').value), domain: $('domain').value, use_https: $('tunnelType').value === 'https', bandwidth_limit_kbps: mbpsToKbps(Number($('bandwidthLimit').value) || 0) };
+        const created = await api('/api/tunnels', { method: 'POST', body: JSON.stringify(body) });
+        pushLog('隧道创建成功：' + created.name);
+        render();
+      } catch (error) { pushLog(error.message); }
+    };
+  }
+  if (route === '/app/traffic') {
+    const report = $('reportTrafficBtn');
+    if (report) report.onclick = async () => {
+      try {
+        const data = await api('/api/client/traffic', { method: 'POST', body: JSON.stringify({ reports: [{ tunnel_id: Number($('reportTunnelId').value) || 0, bytes_in: Number($('bytesIn').value) || 0, bytes_out: Number($('bytesOut').value) || 0 }] }) });
+        pushLog(data || '流量上报成功');
+        render();
+      } catch (error) { pushLog(error.message); }
+    };
+  }
+  if (route === '/app/settings') {
+    const save = $('saveApiBaseBtn');
+    if (save) save.onclick = () => { saveApiBaseFrom('apiBase'); pushLog('API 地址已保存：' + state.apiBase); };
+    const logout2 = $('logoutBtn2');
+    if (logout2) logout2.onclick = () => { state.token = ''; localStorage.removeItem('token'); navigate('/login'); };
+  }
+}
+function updateBandwidthLimitHint() {
+  const input = $('bandwidthLimit');
+  const hint = $('bandwidthLimitHint');
+  if (!input || !hint) return;
+  const limit = Number(input.value) || 0;
+  hint.textContent = limit > 0 ? '约 ' + (limit / 8).toFixed(3) + ' MB/s' : '0 表示继承套餐限速';
+}
+
+async function render() {
+  const route = normalizeRoute(currentRoute());
+  if (route !== currentRoute()) return navigate(route);
+  if (route === '/login') return renderAuth('login');
+  if (route === '/register') return renderAuth('register');
+  if (route.startsWith('/app')) return renderConsole(route);
+  return renderLanding();
+}
+window.addEventListener('hashchange', render);
+render();
 </script>
 </body>
 </html>

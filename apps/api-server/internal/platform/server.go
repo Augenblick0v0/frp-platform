@@ -229,6 +229,10 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request, u User) { ok(w, u) }
 func (s *Server) subscription(w http.ResponseWriter, r *http.Request, u User) {
 	sub, err := s.store.Subscription(u.ID)
 	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			ok(w, Subscription{UserID: u.ID, PlanName: "未开通", Status: "inactive"})
+			return
+		}
 		handleErr(w, err)
 		return
 	}
@@ -255,6 +259,10 @@ func (s *Server) purchaseInfo(w http.ResponseWriter, r *http.Request, u User) {
 func (s *Server) userTraffic(w http.ResponseWriter, r *http.Request, u User) {
 	summary, err := s.store.TrafficSummary(u.ID)
 	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			ok(w, TrafficSummary{UserID: u.ID})
+			return
+		}
 		handleErr(w, err)
 		return
 	}
@@ -263,7 +271,11 @@ func (s *Server) userTraffic(w http.ResponseWriter, r *http.Request, u User) {
 func (s *Server) tunnels(w http.ResponseWriter, r *http.Request, u User) {
 	switch r.Method {
 	case http.MethodGet:
-		ok(w, s.store.Tunnels(u.ID))
+		tunnels := s.store.Tunnels(u.ID)
+		if tunnels == nil {
+			tunnels = []Tunnel{}
+		}
+		ok(w, tunnels)
 	case http.MethodPost:
 		var in Tunnel
 		if !decode(w, r, &in) {
