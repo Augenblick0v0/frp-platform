@@ -1,3 +1,256 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FRP Platform Admin</title><link rel="stylesheet" href="style.css"></head><body><div class="shell"><aside class="side"><div class="brand"><div class="logo"></div>FRP Admin</div><nav class="nav"><a class="active">仪表盘</a><a>用户管理</a><a>套餐管理</a><a>兑换码</a><a>端口池</a><a>隧道</a><a>域名证书</a><a>节点管理</a><a>邮件设置</a></nav></aside><main class="main"><div class="top"><div><div class="eyebrow">Cloudflare style console</div><h1 class="title">平台仪表盘</h1><p class="subtitle">管理后台已接真实 API，可查看隧道、用户、套餐并生成兑换码。</p></div><button class="btn primary" id="refreshBtn">刷新后台</button></div><div class="toolbar"><input class="input" id="apiBase" placeholder="API 地址，默认 http://127.0.0.1:8080"><button class="btn secondary" id="saveApiBtn">保存 API</button></div><section class="card hero" style="margin-bottom:16px"><h2>管理员登录</h2><div class="form"><input class="input" id="adminEmail" value="admin@example.com" placeholder="管理员邮箱"><input class="input" id="adminPassword" type="password" value="admin123456" placeholder="管理员密码"><button class="btn primary" id="adminLoginBtn">登录后台</button><span class="badge orange" id="adminState">未登录</span></div></section><section class="grid cards"><div class="card"><div class="label">在线客户端</div><div class="metric" id="onlineClients">0</div><span class="badge green">healthy</span></div><div class="card"><div class="label">活跃隧道</div><div class="metric" id="totalTunnels">0</div><span class="badge blue">tcp/udp/http/https</span></div><div class="card"><div class="label">今日流量</div><div class="metric" id="todayTraffic">0 GB</div><span class="badge orange">metered</span></div><div class="card"><div class="label">套餐数量</div><div class="metric" id="planCount">0</div><span class="badge green">plans</span></div></section><section class="split" style="margin-top:16px"><div class="card"><h2>隧道管理</h2><table><thead><tr><th>用户ID</th><th>协议</th><th>入口</th><th>本地</th><th>状态</th></tr></thead><tbody id="tunnelRows"><tr><td colspan="5">加载中</td></tr></tbody></table></div><div class="card hero"><h2>生成兑换码</h2><div class="form"><input class="input" id="planId" value="1" placeholder="套餐 ID"><input class="input" id="codeCount" value="5" placeholder="数量"><input class="input" id="codePrefix" value="VIP" placeholder="前缀"><button class="btn primary" id="genCodeBtn">生成兑换码</button></div><h2>系统设置</h2><div class="form"><input class="input" id="serverAddr" placeholder="FRP 入口域名"><input class="input" id="purchaseUrl" placeholder="购买链接"><button class="btn secondary" id="saveSettingsBtn">保存设置</button></div><h2>邮件测试</h2><div class="form"><input class="input" id="testMail" placeholder="测试收件邮箱"><button class="btn secondary" id="testMailBtn">发送测试邮件</button></div><h2>frps 管理</h2><div class="form"><button class="btn secondary" id="frpsStatusBtn">frps 状态</button><button class="btn secondary" id="frpsConfigBtn">查看 frps 配置</button><button class="btn secondary" id="frpsLogsBtn">查看 frps 日志</button><button class="btn secondary" id="frpsRestartBtn">Restart frps</button><button class="btn secondary" id="frpsReloadBtn">Reload frps</button></div><h2>域名与证书</h2><div class="form" id="domainOps"><input class="input" id="domainName" placeholder="用户域名，例如 app.user.com"><input class="input" id="cnameTarget" placeholder="CNAME 目标，例如 frp.example.com"><input class="input" id="leEmail" placeholder="Let's Encrypt 邮箱"><button class="btn secondary" id="checkCnameBtn">检测 CNAME</button><button class="btn secondary" id="renderNginxBtn">生成 HTTPS Nginx 配置</button><button class="btn secondary" id="requestCertBtn">申请证书</button><button class="btn secondary" id="renewDueBtn">续期到期证书</button><button class="btn secondary" id="forceRenewBtn">强制续期全部</button><button class="btn secondary" id="testNginxBtn">测试 Nginx</button><button class="btn secondary" id="reloadNginxBtn">Reload Nginx</button></div></div></section><section class="card" style="margin-top:16px"><h2>多节点管理</h2><p class="subtitle">先在后台创建节点，复制绑定 Token 到节点服务器 `.env.node` 的 NODE_BIND_TOKEN，节点启动后会自动绑定并进入 online 状态。</p><div class="form"><input class="input" id="nodeName" value="edge-node-1" placeholder="节点名称"><input class="input" id="nodeAgentUrl" placeholder="节点 Agent URL，例如 http://1.2.3.4:8090"><input class="input" id="nodeEntryDomain" placeholder="节点入口域名 frp.example.com"><input class="input" id="nodeServerAddr" placeholder="frpc 连接地址 frp.example.com"><input class="input" id="nodeFrpsPort" value="7000" placeholder="frps 端口"><input class="input" id="nodeTcpStart" value="20000" placeholder="TCP 起始"><input class="input" id="nodeTcpEnd" value="29999" placeholder="TCP 结束"><input class="input" id="nodeUdpStart" value="30000" placeholder="UDP 起始"><input class="input" id="nodeUdpEnd" value="39999" placeholder="UDP 结束"><button class="btn primary" id="createNodeBtn">新增节点并生成绑定 Token</button></div><table><thead><tr><th>ID</th><th>节点</th><th>Agent</th><th>入口域名</th><th>状态</th><th>最后在线</th><th>操作</th></tr></thead><tbody id="nodeRows"><tr><td colspan="7">暂无节点</td></tr></tbody></table></section><section class="split" style="margin-top:16px"><div class="card"><h2>用户</h2><table><thead><tr><th>ID</th><th>邮箱</th><th>状态</th></tr></thead><tbody id="userRows"><tr><td colspan="3">暂无数据</td></tr></tbody></table></div><div class="card"><h2>套餐 / 兑换码</h2><table><thead><tr><th>ID</th><th>套餐</th><th>协议</th></tr></thead><tbody id="planRows"></tbody></table><h2>证书状态</h2><table><thead><tr><th>域名</th><th>状态</th><th>过期时间</th></tr></thead><tbody id="certRows"><tr><td colspan="3">暂无证书</td></tr></tbody></table><h2>操作日志</h2><table><thead><tr><th>管理员</th><th>动作</th><th>目标</th><th>时间</th></tr></thead><tbody id="operationRows"><tr><td colspan="4">暂无日志</td></tr></tbody></table><div class="log" id="logBox">ready</div></div></section><div class="footer">FRP Tunnel Platform Admin · Cloudflare-inspired SaaS UI</div></main></div><script>
-const $=id=>document.getElementById(id);let apiBase=localStorage.getItem('adminApiBase')||location.origin;let adminToken=localStorage.getItem('adminToken')||'';$('apiBase').value=apiBase;function base(){apiBase=$('apiBase').value||location.origin;return apiBase.replace(/\/$/,'')}function log(x){$('logBox').textContent=(typeof x==='string'?x:JSON.stringify(x,null,2))+'\n'+$('logBox').textContent}async function api(path,opts={}){const headers={'Content-Type':'application/json'};if(adminToken)headers.Authorization='Bearer '+adminToken;const r=await fetch(base()+path,{headers,...opts});const j=await r.json().catch(()=>({success:false,message:r.statusText}));if(!r.ok||j.success===false)throw new Error(j.message||r.statusText);return j.data}function badge(status){const cls=status==='active'||status==='ok'?'green':status?.includes('pending')?'orange':'red';return `<span class="badge ${cls}">${status||'-'}</span>`}async function refresh(){try{const dash=await api('/api/admin/dashboard');$('onlineClients').textContent=dash.online_clients||0;$('totalTunnels').textContent=dash.total_tunnels||0;$('todayTraffic').textContent=((dash.today_traffic_bytes||0)/1024/1024/1024).toFixed(1)+' GB';const plans=await api('/api/admin/plans');$('planCount').textContent=plans.length;$('planRows').innerHTML=plans.map(p=>`<tr><td>${p.id}</td><td>${p.name}</td><td>${['tcp','udp','http','https'].filter(k=>p['allow_'+k]).join('/')}</td></tr>`).join('');const tunnels=await api('/api/admin/tunnels');$('tunnelRows').innerHTML=tunnels.map(t=>`<tr><td>${t.user_id}</td><td>${t.type}</td><td>${t.public_url||''}</td><td>${t.local_host}:${t.local_port}</td><td>${badge(t.status)}</td></tr>`).join('')||'<tr><td colspan="5">暂无隧道</td></tr>';const users=await api('/api/admin/users');$('userRows').innerHTML=users.map(u=>`<tr><td>${u.id}</td><td>${u.email}</td><td>${badge(u.status)}</td></tr>`).join('')||'<tr><td colspan="3">暂无用户</td></tr>';const nodes=await api('/api/admin/nodes');$('nodeRows').innerHTML=nodes.map(n=>`<tr><td>${n.id}</td><td>${n.name}<br><small>bind: ${n.bind_token||'-'}</small></td><td>${n.agent_url||'-'}</td><td>${n.frp_entry_domain||'-'}<br><small>${n.server_addr||''}:${n.frp_server_port||7000}</small></td><td>${badge(n.status)}</td><td>${n.last_seen_at||'-'}</td><td><button class="btn secondary" onclick="nodeAction(${n.id},'status')">状态</button><button class="btn secondary" onclick="nodeAction(${n.id},'frps-config')">配置</button><button class="btn secondary" onclick="nodeAction(${n.id},'frps-logs')">日志</button><button class="btn secondary" onclick="nodeAction(${n.id},'frps-restart','POST')">重启</button><button class="btn secondary" onclick="nodeAction(${n.id},'nginx-test','POST')">Nginx测试</button><button class="btn secondary" onclick="nodeAction(${n.id},'nginx-reload','POST')">Nginx重载</button></td></tr>`).join('')||'<tr><td colspan="7">暂无节点</td></tr>';const settings=await api('/api/admin/settings');$('serverAddr').value=settings.server_addr;$('purchaseUrl').value=settings.purchase_url;const certs=await api('/api/admin/certificates');$('certRows').innerHTML=certs.map(c=>`<tr><td>${c.domain}</td><td>${badge(c.status)}</td><td>${c.expires_at||'-'}</td></tr>`).join('')||'<tr><td colspan="3">暂无证书</td></tr>';const ops=await api('/api/admin/operation-logs');$('operationRows').innerHTML=ops.map(o=>`<tr><td>${o.admin_email}</td><td>${o.action}</td><td>${o.target}</td><td>${o.created_at}</td></tr>`).join('')||'<tr><td colspan="4">暂无日志</td></tr>';log('刷新完成')}catch(e){log('刷新失败: '+e.message)}}async function nodeAction(id,action,method='GET'){try{log(await api('/api/admin/nodes/'+id+'/'+action,{method}))}catch(e){log(e.message)}}$('saveApiBtn').onclick=()=>{localStorage.setItem('adminApiBase',$('apiBase').value);log('API 地址已保存')};$('adminLoginBtn').onclick=async()=>{try{const d=await api('/api/admin/login',{method:'POST',body:JSON.stringify({email:$('adminEmail').value,password:$('adminPassword').value})});adminToken=d.access_token;localStorage.setItem('adminToken',adminToken);$('adminState').textContent='已登录 '+d.admin.email;$('adminState').className='badge green';log('管理员登录成功');refresh()}catch(e){$('adminState').textContent='登录失败';$('adminState').className='badge red';log(e.message)}};if(adminToken){$('adminState').textContent='已保存 token';$('adminState').className='badge green'};$('refreshBtn').onclick=refresh;$('genCodeBtn').onclick=async()=>{try{const d=await api('/api/admin/redeem-codes',{method:'POST',body:JSON.stringify({plan_id:Number($('planId').value),count:Number($('codeCount').value),prefix:$('codePrefix').value})});log(d)}catch(e){log(e.message)}};$('createNodeBtn').onclick=async()=>{try{const node=await api('/api/admin/nodes',{method:'POST',body:JSON.stringify({name:$('nodeName').value,agent_url:$('nodeAgentUrl').value,frp_entry_domain:$('nodeEntryDomain').value,server_addr:$('nodeServerAddr').value,frp_server_port:Number($('nodeFrpsPort').value),tcp_port_start:Number($('nodeTcpStart').value),tcp_port_end:Number($('nodeTcpEnd').value),udp_port_start:Number($('nodeUdpStart').value),udp_port_end:Number($('nodeUdpEnd').value)})});log('节点已创建，请复制 NODE_BIND_TOKEN 到节点 .env.node： '+node.bind_token);refresh()}catch(e){log(e.message)}};$('saveSettingsBtn').onclick=async()=>{try{const current=await api('/api/admin/settings');current.server_addr=$('serverAddr').value;current.frp_entry_domain=$('serverAddr').value;current.purchase_url=$('purchaseUrl').value;log(await api('/api/admin/settings',{method:'PUT',body:JSON.stringify(current)}));refresh()}catch(e){log(e.message)}};$('testMailBtn').onclick=async()=>{try{log(await api('/api/admin/settings/test-mail',{method:'POST',body:JSON.stringify({email:$('testMail').value})}))}catch(e){log(e.message)}};$('checkCnameBtn').onclick=async()=>{try{log(await api('/api/admin/domains/check-cname',{method:'POST',body:JSON.stringify({domain:$('domainName').value,target:$('cnameTarget').value})}))}catch(e){log(e.message)}};$('renderNginxBtn').onclick=async()=>{try{log(await api('/api/admin/nginx/render-https',{method:'POST',body:JSON.stringify({domain:$('domainName').value})}))}catch(e){log(e.message)}};$('requestCertBtn').onclick=async()=>{try{log(await api('/api/admin/certificates/request',{method:'POST',body:JSON.stringify({domain:$('domainName').value,email:$('leEmail').value})}));refresh()}catch(e){log(e.message)}};$('renewDueBtn').onclick=async()=>{try{log(await api('/api/admin/certificates/renew-due',{method:'POST',body:JSON.stringify({force:false})}));refresh()}catch(e){log(e.message)}};$('forceRenewBtn').onclick=async()=>{try{log(await api('/api/admin/certificates/renew-due',{method:'POST',body:JSON.stringify({force:true})}));refresh()}catch(e){log(e.message)}};$('testNginxBtn').onclick=async()=>{try{log(await api('/api/admin/nginx/test',{method:'POST'}))}catch(e){log(e.message)}};$('frpsStatusBtn').onclick=async()=>{try{log(await api('/api/admin/frps/status'))}catch(e){log(e.message)}};$('frpsConfigBtn').onclick=async()=>{try{log(await api('/api/admin/frps/config'))}catch(e){log(e.message)}};$('frpsLogsBtn').onclick=async()=>{try{log(await api('/api/admin/frps/logs'))}catch(e){log(e.message)}};$('frpsRestartBtn').onclick=async()=>{try{log(await api('/api/admin/frps/restart',{method:'POST'}))}catch(e){log(e.message)}};$('frpsReloadBtn').onclick=async()=>{try{log(await api('/api/admin/frps/reload',{method:'POST'}))}catch(e){log(e.message)}};$('reloadNginxBtn').onclick=async()=>{try{log(await api('/api/admin/nginx/reload',{method:'POST'}))}catch(e){log(e.message)}};refresh();
-</script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>FRP Platform Admin</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="adminApp"></div>
+<script>
+const $ = id => document.getElementById(id);
+const app = $('adminApp');
+const state = {
+  token: localStorage.getItem('adminToken') || '',
+  apiBase: localStorage.getItem('adminApiBase') || location.origin,
+  dashboard: null,
+  users: [],
+  plans: [],
+  tunnels: [],
+  nodes: [],
+  certificates: [],
+  operations: [],
+  settings: null,
+  logLines: ['ready'],
+};
+const adminRoutes = [
+  { path: '/dashboard', label: '仪表盘', desc: '平台核心指标' },
+  { path: '/users', label: '用户管理', desc: '账号与状态' },
+  { path: '/plans', label: '套餐管理', desc: '售卖套餐' },
+  { path: '/redeem', label: '兑换码', desc: '批量生成' },
+  { path: '/tunnels', label: '隧道管理', desc: '全部映射' },
+  { path: '/nodes', label: '节点管理', desc: '边缘节点' },
+  { path: '/certificates', label: '域名证书', desc: 'HTTPS 运维' },
+  { path: '/settings', label: '系统设置', desc: '服务参数' },
+  { path: '/logs', label: '操作日志', desc: '审计记录' },
+];
+function h(value) { return String(value ?? '').replace(/[&<>'"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch])); }
+function route() { return location.hash.replace(/^#/, '') || '/'; }
+function navigate(path) { if (route() === path) render(); else location.hash = path; }
+function normalizeRoute(path) {
+  if (!path || path === '/') return state.token ? '/dashboard' : '/login';
+  if (path !== '/login' && !state.token) return '/login';
+  if (path === '/login' && state.token) return '/dashboard';
+  return adminRoutes.some(item => item.path === path) || path === '/login' ? path : '/dashboard';
+}
+function saveApiBase() {
+  const input = $('apiBase');
+  if (input) state.apiBase = input.value || location.origin;
+  localStorage.setItem('adminApiBase', state.apiBase);
+  return state.apiBase.replace(/\/$/, '');
+}
+async function api(path, opts = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+  if (state.token) headers.Authorization = 'Bearer ' + state.token;
+  const response = await fetch(saveApiBase() + path, { ...opts, headers });
+  const json = await response.json().catch(() => ({ success: false, message: response.statusText }));
+  if (!response.ok || json.success === false) throw new Error(json.message || response.statusText);
+  return json.data;
+}
+function badge(status) {
+  const text = status || '-';
+  const cls = text === 'active' || text === 'ok' || text === 'online' ? 'green' : text.includes('pending') ? 'orange' : 'red';
+  return `<span class="badge ${cls}">${h(text)}</span>`;
+}
+function money(cents) { return '¥' + ((Number(cents) || 0) / 100).toFixed(2); }
+function bytes(n) { n = Number(n) || 0; return (n / 1024 / 1024 / 1024).toFixed(1) + ' GB'; }
+function log(line) {
+  const text = typeof line === 'string' ? line : JSON.stringify(line, null, 2);
+  state.logLines.unshift(new Date().toLocaleTimeString() + '  ' + text);
+  state.logLines = state.logLines.slice(0, 40);
+  const box = $('logBox');
+  if (box) box.textContent = state.logLines.join('\n');
+}
+function bindRoutes(root = document) {
+  root.querySelectorAll('[data-route]').forEach(el => el.onclick = event => { event.preventDefault(); navigate(el.dataset.route); });
+}
+function renderLogin() {
+  app.innerHTML = `<main class="login-page">
+    <section class="login-hero">
+      <div class="brand"><span class="logo"></span><span><strong>FRP Admin</strong><small>商业运营后台</small></span></div>
+      <h1>登录后台后管理用户、套餐、隧道、节点和证书。</h1>
+      <p>集中管理用户、套餐、兑换码、节点、证书和隧道运行状态，适合商业化运营和日常运维。</p>
+    </section>
+    <section class="login-card">
+      <span class="eyebrow">Admin Login</span>
+      <h2>管理员登录</h2>
+      <div class="form">
+        <label>API 地址<input class="input" id="apiBase" value="${h(state.apiBase)}" placeholder="默认当前站点"></label>
+        <label>管理员邮箱<input class="input" id="adminEmail" value="admin@example.com" autocomplete="username"></label>
+        <label>管理员密码<input class="input" id="adminPassword" type="password" autocomplete="current-password"></label>
+        <button class="btn primary full" id="adminLoginBtn">登录后台</button>
+      </div>
+      <div class="mini-log" id="loginLog">请输入管理员账号。</div>
+    </section>
+  </main>`;
+  $('adminLoginBtn').onclick = async () => {
+    try {
+      const data = await api('/api/admin/login', { method: 'POST', body: JSON.stringify({ email: $('adminEmail').value, password: $('adminPassword').value }) });
+      state.token = data.access_token;
+      localStorage.setItem('adminToken', state.token);
+      log('管理员登录成功');
+      navigate('/dashboard');
+    } catch (error) { $('loginLog').textContent = error.message; }
+  };
+}
+async function loadAdminData() {
+  const safe = async (fn, fallback) => { try { return await fn(); } catch (error) { log(error.message); return fallback; } };
+  state.dashboard = await safe(() => api('/api/admin/dashboard'), {});
+  state.plans = await safe(() => api('/api/admin/plans'), [] ) || [];
+  state.tunnels = await safe(() => api('/api/admin/tunnels'), [] ) || [];
+  state.users = await safe(() => api('/api/admin/users'), [] ) || [];
+  state.nodes = await safe(() => api('/api/admin/nodes'), [] ) || [];
+  state.settings = await safe(() => api('/api/admin/settings'), {} ) || {};
+  state.certificates = await safe(() => api('/api/admin/certificates'), [] ) || [];
+  state.operations = await safe(() => api('/api/admin/operation-logs'), [] ) || [];
+}
+async function renderAdmin(path) {
+  app.innerHTML = shell(path, `<div class="card loading">加载后台数据...</div>`);
+  bindShell();
+  try {
+    await loadAdminData();
+    app.innerHTML = shell(path, page(path));
+    bindShell();
+    bindPage(path);
+  } catch (error) {
+    if (/认证|登录|Unauthorized|UNAUTHORIZED/i.test(error.message)) {
+      state.token = '';
+      localStorage.removeItem('adminToken');
+      return navigate('/login');
+    }
+    app.innerHTML = shell(path, `<div class="card error"><h2>加载失败</h2><p>${h(error.message)}</p><button class="btn primary" id="retryBtn">重试</button></div>`);
+    bindShell();
+    $('retryBtn').onclick = render;
+  }
+}
+function shell(path, body) {
+  const active = adminRoutes.find(item => item.path === path) || adminRoutes[0];
+  return `<div class="admin-shell">
+    <aside class="side">
+      <a class="brand" href="#/dashboard" data-route="/dashboard"><span class="logo"></span><span><strong>FRP Admin</strong><small>Operation Console</small></span></a>
+      <nav class="nav">${adminRoutes.map(item => `<a class="${item.path === path ? 'active' : ''}" href="#${item.path}" data-route="${item.path}"><b>${item.label}</b><small>${item.desc}</small></a>`).join('')}</nav>
+    </aside>
+    <main class="main">
+      <header class="top"><div><span class="eyebrow">Admin console</span><h1 class="title">${h(active.label)}</h1><p class="subtitle">${h(active.desc)}</p></div><div class="top-actions"><button class="btn secondary" id="refreshBtn">刷新</button><button class="btn danger" id="logoutBtn">退出</button></div></header>
+      ${body}
+    </main>
+  </div>`;
+}
+function bindShell() {
+  bindRoutes(app);
+  const refresh = $('refreshBtn'); if (refresh) refresh.onclick = render;
+  const logout = $('logoutBtn'); if (logout) logout.onclick = () => { state.token = ''; localStorage.removeItem('adminToken'); navigate('/login'); };
+}
+function page(path) {
+  if (path === '/users') return usersPage();
+  if (path === '/plans') return plansPage();
+  if (path === '/redeem') return redeemPage();
+  if (path === '/tunnels') return tunnelsPage();
+  if (path === '/nodes') return nodesPage();
+  if (path === '/certificates') return certificatesPage();
+  if (path === '/settings') return settingsPage();
+  if (path === '/logs') return logsPage();
+  return dashboardPage();
+}
+function dashboardPage() {
+  const d = state.dashboard || {};
+  return `<section class="metrics">
+    <article class="metric-card"><span>在线客户端</span><strong>${h(d.online_clients || 0)}</strong><em class="badge green">healthy</em></article>
+    <article class="metric-card"><span>活跃隧道</span><strong>${h(d.total_tunnels || 0)}</strong><em class="badge blue">tunnels</em></article>
+    <article class="metric-card"><span>今日流量</span><strong>${bytes(d.today_traffic_bytes)}</strong><em class="badge orange">metered</em></article>
+    <article class="metric-card"><span>套餐数量</span><strong>${state.plans.length}</strong><em class="badge green">plans</em></article>
+  </section>
+  <section class="split"><div class="card"><h2>最近用户</h2>${usersTable(state.users.slice(0, 6))}</div><div class="card"><h2>最近隧道</h2>${tunnelsTable(state.tunnels.slice(0, 6))}</div></section>`;
+}
+function usersPage() { return `<section class="card"><h2>用户管理</h2><p class="subtitle">查看用户账号和状态。</p>${usersTable(state.users)}</section>`; }
+function usersTable(users) {
+  if (!users.length) return '<div class="empty">暂无用户</div>';
+  return `<div class="table-wrap"><table><thead><tr><th>ID</th><th>邮箱</th><th>状态</th><th>创建时间</th></tr></thead><tbody>${users.map(u => `<tr><td>${u.id}</td><td>${h(u.email)}</td><td>${badge(u.status)}</td><td>${h(u.created_at || '-')}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function plansPage() {
+  if (!state.plans.length) return '<section class="card"><h2>套餐管理</h2><div class="empty">暂无套餐</div></section>';
+  return `<section class="card"><h2>套餐管理</h2><div class="table-wrap"><table><thead><tr><th>ID</th><th>套餐</th><th>价格</th><th>流量</th><th>限速</th><th>协议</th><th>状态</th></tr></thead><tbody>${state.plans.map(p => `<tr><td>${p.id}</td><td><b>${h(p.name)}</b><small>${h(p.description || '')}</small></td><td>${money(p.price_cents)}</td><td>${bytes(p.traffic_limit_bytes)}</td><td>${((p.bandwidth_limit_kbps || 0) / 1000).toFixed(2)} Mbps</td><td>${['tcp','udp','http','https'].filter(k => p['allow_' + k]).join('/')}</td><td>${badge(p.status)}</td></tr>`).join('')}</tbody></table></div></section>`;
+}
+function redeemPage() {
+  return `<section class="split"><div class="card accent"><h2>生成兑换码</h2><div class="form"><input class="input" id="planId" value="1" placeholder="套餐 ID"><input class="input" id="codeCount" value="5" placeholder="数量"><input class="input" id="codePrefix" value="VIP" placeholder="前缀"><button class="btn primary" id="genCodeBtn">生成兑换码</button></div></div><div class="card"><h2>生成结果</h2><div class="log" id="logBox">${h(state.logLines.join('\n'))}</div></div></section>`;
+}
+function tunnelsPage() { return `<section class="card"><h2>隧道管理</h2>${tunnelsTable(state.tunnels)}</section>`; }
+function tunnelsTable(tunnels) {
+  if (!tunnels.length) return '<div class="empty">暂无隧道</div>';
+  return `<div class="table-wrap"><table><thead><tr><th>用户ID</th><th>名称</th><th>协议</th><th>入口</th><th>本地</th><th>状态</th></tr></thead><tbody>${tunnels.map(t => `<tr><td>${t.user_id}</td><td>${h(t.name || '-')}</td><td>${h(t.type)}</td><td>${h(t.public_url || '')}</td><td>${h(t.local_host)}:${h(t.local_port)}</td><td>${badge(t.status)}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function nodesPage() {
+  return `<section class="grid-page"><div class="card accent"><h2>新增节点</h2><div class="form"><input class="input" id="nodeName" value="edge-node-1" placeholder="节点名称"><input class="input" id="nodeAgentUrl" placeholder="节点 Agent URL"><input class="input" id="nodeEntryDomain" placeholder="节点入口域名"><input class="input" id="nodeServerAddr" placeholder="frpc 连接地址"><input class="input" id="nodeFrpsPort" value="7000" placeholder="frps 端口"><div class="inline"><input class="input" id="nodeTcpStart" value="20000" placeholder="TCP 起始"><input class="input" id="nodeTcpEnd" value="29999" placeholder="TCP 结束"></div><div class="inline"><input class="input" id="nodeUdpStart" value="30000" placeholder="UDP 起始"><input class="input" id="nodeUdpEnd" value="39999" placeholder="UDP 结束"></div><button class="btn primary" id="createNodeBtn">新增节点并生成绑定 Token</button></div></div><div class="card"><h2>节点列表</h2>${nodesTable()}</div></section>`;
+}
+function nodesTable() {
+  if (!state.nodes.length) return '<div class="empty">暂无节点</div>';
+  return `<div class="table-wrap"><table><thead><tr><th>ID</th><th>节点</th><th>Agent</th><th>入口</th><th>状态</th><th>操作</th></tr></thead><tbody>${state.nodes.map(n => `<tr><td>${n.id}</td><td><b>${h(n.name)}</b><small>bind: ${h(n.bind_token || '-')}</small></td><td>${h(n.agent_url || '-')}</td><td>${h(n.frp_entry_domain || '-')}<small>${h(n.server_addr || '')}:${h(n.frp_server_port || 7000)}</small></td><td>${badge(n.status)}</td><td class="actions"><button class="btn secondary small" data-node="${n.id}" data-action="status">状态</button><button class="btn secondary small" data-node="${n.id}" data-action="frps-config">配置</button><button class="btn secondary small" data-node="${n.id}" data-action="frps-logs">日志</button><button class="btn secondary small" data-node="${n.id}" data-action="frps-restart" data-method="POST">重启</button></td></tr>`).join('')}</tbody></table></div>`;
+}
+function certificatesPage() {
+  return `<section class="split"><div class="card accent"><h2>域名与证书操作</h2><div class="form"><input class="input" id="domainName" placeholder="用户域名，例如 app.user.com"><input class="input" id="cnameTarget" placeholder="CNAME 目标，例如 frp.example.com"><input class="input" id="leEmail" placeholder="Let's Encrypt 邮箱"><button class="btn secondary" id="checkCnameBtn">检测 CNAME</button><button class="btn secondary" id="renderNginxBtn">生成 HTTPS Nginx 配置</button><button class="btn secondary" id="requestCertBtn">申请证书</button><button class="btn secondary" id="renewDueBtn">续期到期证书</button><button class="btn secondary" id="forceRenewBtn">强制续期全部</button><button class="btn secondary" id="testNginxBtn">测试 Nginx</button><button class="btn secondary" id="reloadNginxBtn">Reload Nginx</button></div></div><div class="card"><h2>证书状态</h2>${certTable()}</div></section>`;
+}
+function certTable() {
+  if (!state.certificates.length) return '<div class="empty">暂无证书</div>';
+  return `<div class="table-wrap"><table><thead><tr><th>域名</th><th>状态</th><th>过期时间</th></tr></thead><tbody>${state.certificates.map(c => `<tr><td>${h(c.domain)}</td><td>${badge(c.status)}</td><td>${h(c.expires_at || '-')}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function settingsPage() {
+  const s = state.settings || {};
+  return `<section class="split"><div class="card"><h2>系统设置</h2><div class="form"><input class="input" id="apiBase" value="${h(state.apiBase)}" placeholder="后台 API 地址"><input class="input" id="serverAddr" value="${h(s.server_addr || '')}" placeholder="FRP 入口域名"><input class="input" id="purchaseUrl" value="${h(s.purchase_url || '')}" placeholder="购买链接"><button class="btn primary" id="saveSettingsBtn">保存设置</button></div><h2>邮件测试</h2><div class="form"><input class="input" id="testMail" placeholder="测试收件邮箱"><button class="btn secondary" id="testMailBtn">发送测试邮件</button></div></div><div class="card accent"><h2>frps 管理</h2><div class="form"><button class="btn secondary" id="frpsStatusBtn">frps 状态</button><button class="btn secondary" id="frpsConfigBtn">查看 frps 配置</button><button class="btn secondary" id="frpsLogsBtn">查看 frps 日志</button><button class="btn secondary" id="frpsRestartBtn">Restart frps</button><button class="btn secondary" id="frpsReloadBtn">Reload frps</button></div></div></section>`;
+}
+function logsPage() {
+  return `<section class="split"><div class="card"><h2>操作日志</h2>${opsTable()}</div><div class="card"><h2>运行日志</h2><div class="log" id="logBox">${h(state.logLines.join('\n'))}</div></div></section>`;
+}
+function opsTable() {
+  if (!state.operations.length) return '<div class="empty">暂无操作日志</div>';
+  return `<div class="table-wrap"><table><thead><tr><th>管理员</th><th>动作</th><th>目标</th><th>时间</th></tr></thead><tbody>${state.operations.map(o => `<tr><td>${h(o.admin_email)}</td><td>${h(o.action)}</td><td>${h(o.target)}</td><td>${h(o.created_at)}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function bindPage(path) {
+  if (path === '/redeem') {
+    $('genCodeBtn').onclick = async () => { try { const data = await api('/api/admin/redeem-codes', { method: 'POST', body: JSON.stringify({ plan_id: Number($('planId').value), count: Number($('codeCount').value), prefix: $('codePrefix').value }) }); log(data); } catch (e) { log(e.message); } };
+  }
+  if (path === '/nodes') {
+    $('createNodeBtn').onclick = async () => { try { const node = await api('/api/admin/nodes', { method: 'POST', body: JSON.stringify({ name: $('nodeName').value, agent_url: $('nodeAgentUrl').value, frp_entry_domain: $('nodeEntryDomain').value, server_addr: $('nodeServerAddr').value, frp_server_port: Number($('nodeFrpsPort').value), tcp_port_start: Number($('nodeTcpStart').value), tcp_port_end: Number($('nodeTcpEnd').value), udp_port_start: Number($('nodeUdpStart').value), udp_port_end: Number($('nodeUdpEnd').value) }) }); log('节点已创建，NODE_BIND_TOKEN：' + node.bind_token); render(); } catch (e) { log(e.message); } };
+    document.querySelectorAll('[data-node]').forEach(btn => btn.onclick = async () => { try { log(await api(`/api/admin/nodes/${btn.dataset.node}/${btn.dataset.action}`, { method: btn.dataset.method || 'GET' })); } catch (e) { log(e.message); } });
+  }
+  if (path === '/certificates') {
+    const domainBody = () => ({ domain: $('domainName').value, target: $('cnameTarget').value, email: $('leEmail').value });
+    $('checkCnameBtn').onclick = async () => { try { log(await api('/api/admin/domains/check-cname', { method: 'POST', body: JSON.stringify(domainBody()) })); } catch (e) { log(e.message); } };
+    $('renderNginxBtn').onclick = async () => { try { log(await api('/api/admin/nginx/render-https', { method: 'POST', body: JSON.stringify(domainBody()) })); } catch (e) { log(e.message); } };
+    $('requestCertBtn').onclick = async () => { try { log(await api('/api/admin/certificates/request', { method: 'POST', body: JSON.stringify(domainBody()) })); render(); } catch (e) { log(e.message); } };
+    $('renewDueBtn').onclick = async () => { try { log(await api('/api/admin/certificates/renew-due', { method: 'POST', body: JSON.stringify({ force: false }) })); render(); } catch (e) { log(e.message); } };
+    $('forceRenewBtn').onclick = async () => { try { log(await api('/api/admin/certificates/renew-due', { method: 'POST', body: JSON.stringify({ force: true }) })); render(); } catch (e) { log(e.message); } };
+    $('testNginxBtn').onclick = async () => { try { log(await api('/api/admin/nginx/test', { method: 'POST' })); } catch (e) { log(e.message); } };
+    $('reloadNginxBtn').onclick = async () => { try { log(await api('/api/admin/nginx/reload', { method: 'POST' })); } catch (e) { log(e.message); } };
+  }
+  if (path === '/settings') {
+    $('saveSettingsBtn').onclick = async () => { try { saveApiBase(); const current = state.settings || {}; current.server_addr = $('serverAddr').value; current.frp_entry_domain = $('serverAddr').value; current.purchase_url = $('purchaseUrl').value; log(await api('/api/admin/settings', { method: 'PUT', body: JSON.stringify(current) })); render(); } catch (e) { log(e.message); } };
+    $('testMailBtn').onclick = async () => { try { log(await api('/api/admin/settings/test-mail', { method: 'POST', body: JSON.stringify({ email: $('testMail').value }) })); } catch (e) { log(e.message); } };
+    $('frpsStatusBtn').onclick = async () => { try { log(await api('/api/admin/frps/status')); } catch (e) { log(e.message); } };
+    $('frpsConfigBtn').onclick = async () => { try { log(await api('/api/admin/frps/config')); } catch (e) { log(e.message); } };
+    $('frpsLogsBtn').onclick = async () => { try { log(await api('/api/admin/frps/logs')); } catch (e) { log(e.message); } };
+    $('frpsRestartBtn').onclick = async () => { try { log(await api('/api/admin/frps/restart', { method: 'POST' })); } catch (e) { log(e.message); } };
+    $('frpsReloadBtn').onclick = async () => { try { log(await api('/api/admin/frps/reload', { method: 'POST' })); } catch (e) { log(e.message); } };
+  }
+}
+async function render() {
+  const next = normalizeRoute(route());
+  if (next !== route()) return navigate(next);
+  if (next === '/login') return renderLogin();
+  return renderAdmin(next);
+}
+window.addEventListener('hashchange', render);
+render();
+</script>
+</body>
+</html>

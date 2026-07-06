@@ -155,3 +155,26 @@ td small { color: #64748b; margin-top: 4px; }
   .hero-copy h1, .auth-visual h1 { font-size: 42px; }
   .site-footer { flex-direction: column; }
 }
+.trust-band {
+  border-radius: 30px;
+  border: 1px solid var(--line);
+  background: linear-gradient(135deg, #fff7e8, #ffffff 65%);
+  padding: 30px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 22px;
+  align-items: center;
+  box-shadow: var(--shadow-soft);
+}
+.trust-band h2 { margin: 10px 0 10px; font-size: clamp(30px, 4vw, 52px); line-height: 1; letter-spacing: -.06em; }
+.trust-band p { margin: 0; color: var(--muted); line-height: 1.7; max-width: 760px; }
+.commercial-grid { display: grid; grid-template-columns: 1.25fr repeat(3, 1fr); gap: 14px; }
+.commercial-card { min-height: 190px; background: rgba(255,255,255,.82); border: 1px solid var(--line); border-radius: 24px; padding: 22px; display: grid; align-content: space-between; box-shadow: var(--shadow-soft); }
+.commercial-card b, .commercial-card h3 { font-size: 22px; margin: 0; letter-spacing: -.04em; }
+.commercial-card span, .commercial-card p { color: var(--muted); line-height: 1.65; }
+.price-feature { background: linear-gradient(135deg, #17130c, #43250f); color: #fff; border-color: rgba(255,255,255,.08); }
+.price-feature .eyebrow { color: #ffbd6d; }
+.price-feature strong { font-size: 40px; letter-spacing: -.05em; }
+.price-feature small { font-size: 15px; color: #ffd7aa; }
+.price-feature p { color: #ffe4c2; }
+@media (max-width: 1040px) { .commercial-grid, .trust-band { grid-template-columns: 1fr; } }

@@ -112,7 +112,7 @@ function renderLanding() {
         <div class="hero-copy">
           <span class="eyebrow">Private network access</span>
           <h1>让飞牛 NAS 和本地服务，像云服务一样可访问。</h1>
-          <p>参考成熟 FRP 平台动线：先了解服务，再独立登录/注册，登录后进入控制台管理套餐、支付、隧道和流量。</p>
+          <p>为飞牛 NAS、远程办公、游戏联机和开发联调提供稳定公网入口，支持套餐购买、域名映射、流量统计和多协议隧道。</p>
           <div class="hero-actions">
             <a class="btn primary" href="#/login" data-route="/login">登录控制台</a>
             <a class="btn secondary" href="#/register" data-route="/register">注册账号</a>
@@ -132,11 +132,25 @@ function renderLanding() {
         <article><b>游戏联机</b><span>Minecraft、Steam 服务器、UDP 服务</span></article>
         <article><b>远程运维</b><span>SSH、RDP、Home Assistant 面板</span></article>
       </section>
-      <section class="landing-band">
-        <div><span class="eyebrow">Workflow</span><h2>正常系统动线，不再把所有模块挤在一屏。</h2></div>
-        <ol>
-          <li>访问首页了解服务</li><li>进入独立登录/注册页</li><li>登录后进入控制台</li><li>侧边栏切换具体业务页面</li>
-        </ol>
+      <section class="trust-band">
+        <div>
+          <span class="eyebrow">Commercial Frp Service</span>
+          <h2>稳定、可控、适合长期使用的内网穿透服务。</h2>
+          <p>面向 NAS 外网访问、远程办公、游戏联机和开发联调，提供套餐化计费、流量统计、HTTPS 域名接入和可视化隧道管理。</p>
+        </div>
+        <a class="btn primary" href="#/register" data-route="/register">立即开通账号</a>
+      </section>
+      <section class="commercial-grid">
+        <article class="commercial-card price-feature">
+          <span class="eyebrow">Starter Plan</span>
+          <h3>高级套餐</h3>
+          <strong>¥9.90 <small>/ 30 天</small></strong>
+          <p>100GB 流量、10.24Mbps 限速，支持 TCP / UDP / HTTP / HTTPS 和自定义域名。</p>
+          <a class="btn secondary" href="#/login" data-route="/login">登录后购买</a>
+        </article>
+        <article class="commercial-card"><b>透明用量</b><span>控制台查看剩余流量、今日用量和隧道状态，避免黑盒消耗。</span></article>
+        <article class="commercial-card"><b>域名与证书</b><span>支持 HTTP/HTTPS 域名映射，可配合自动证书能力完成正式访问。</span></article>
+        <article class="commercial-card"><b>多协议接入</b><span>Web 面板、SSH、RDP、游戏端口和 UDP 服务可以按场景创建隧道。</span></article>
       </section>
     </main>
     ${footer()}
@@ -152,8 +166,8 @@ function renderAuth(mode) {
       <section class="auth-visual">
         <span class="eyebrow">${isRegister ? 'Create account' : 'Password login'}</span>
         <h1>${isRegister ? '注册后再创建隧道。' : '登录后进入用户控制台。'}</h1>
-        <p>${isRegister ? '邮箱验证码用于注册验证。开发环境会返回 dev_code，当前可直接使用 123456。' : '控制台内才显示套餐支付、兑换码、隧道管理和流量上报。'}</p>
-        <div class="auth-steps"><span>01 独立认证</span><span>02 控制台路由</span><span>03 分模块管理</span></div>
+        <p>${isRegister ? '创建账号后即可选择套餐，按业务场景开通 HTTP、HTTPS、TCP 或 UDP 隧道。' : '登录后查看套餐权益、流量用量、隧道状态，并继续完成购买或续费。'}</p>
+        <div class="auth-steps"><span>01 安全登录</span><span>02 开通套餐</span><span>03 服务上线</span></div>
       </section>
       <section class="auth-card" aria-label="${isRegister ? '注册账号' : '密码登录'}">
         <div class="card-title">
