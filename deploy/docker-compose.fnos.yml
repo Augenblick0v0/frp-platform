@@ -1,16 +1,26 @@
 services:
-  nginx:
-    image: nginx:1.27-alpine
-    container_name: frp-fnos-nginx
+  user-portal:
+    build:
+      context: ..
+      dockerfile: apps/user-web/Dockerfile
+    container_name: frp-fnos-user-portal
     ports:
-      - "${FNOS_HTTP_PORT:-18088}:80"
-    volumes:
-      - ./nginx-fnos/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./logs/fnos-nginx:/var/log/nginx
+      - "${FNOS_USER_HTTP_PORT:-18188}:80"
     depends_on:
       - api-server
-      - admin-web
-      - user-web
+    restart: unless-stopped
+
+  admin-portal:
+    build:
+      context: ..
+      dockerfile: apps/admin-web/Dockerfile
+    container_name: frp-fnos-admin-portal
+    ports:
+      - "${FNOS_ADMIN_HTTP_PORT:-18189}:80"
+    environment:
+      FNOS_ADMIN_PATH: ${FNOS_ADMIN_PATH}
+    depends_on:
+      - api-server
     restart: unless-stopped
 
   api-server:
@@ -46,19 +56,6 @@ services:
       - redis
     restart: unless-stopped
 
-  admin-web:
-    build:
-      context: ..
-      dockerfile: apps/admin-web/Dockerfile
-    container_name: frp-fnos-admin-web
-    restart: unless-stopped
-
-  user-web:
-    build:
-      context: ..
-      dockerfile: apps/user-web/Dockerfile
-    container_name: frp-fnos-user-web
-    restart: unless-stopped
 
   postgres:
     image: postgres:15

@@ -3,19 +3,84 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>FRP User Panel</title>
+  <title>FRP Tunnel Platform</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="shell">
+<section id="authView" class="public-shell">
+  <header class="public-nav">
+    <div class="brand"><div class="logo"></div><span>FRP Tunnel</span></div>
+    <nav>
+      <a href="#scenes">应用场景</a>
+      <a href="#pricing">套餐</a>
+      <a href="#loginCard">登录</a>
+    </nav>
+  </header>
+
+  <main class="public-main">
+    <section class="hero-grid">
+      <div class="hero-copy">
+        <div class="eyebrow">Private network access</div>
+        <h1>把本地服务安全映射到公网。</h1>
+        <p>适合飞牛 NAS、远程桌面、Minecraft 联机、开发调试和临时演示。先注册/登录，再进入控制台创建隧道。</p>
+        <div class="hero-actions">
+          <a class="btn primary" href="#loginCard">登录 / 注册</a>
+          <a class="btn secondary" href="#pricing">查看套餐</a>
+        </div>
+      </div>
+      <div class="login-card" id="loginCard">
+        <div class="card-head">
+          <span class="badge blue">Account</span>
+          <h2>进入用户控制台</h2>
+          <p>登录后才能购买套餐、兑换套餐和配置隧道。</p>
+        </div>
+        <div class="form">
+          <input class="input" id="apiBase" placeholder="API 地址，默认当前站点">
+          <input class="input" id="email" placeholder="邮箱">
+          <input class="input" id="password" type="password" placeholder="密码">
+          <div class="inline-form">
+            <input class="input" id="code" placeholder="验证码">
+            <button class="btn secondary" id="sendCodeBtn">发送验证码</button>
+          </div>
+          <div class="inline-actions">
+            <button class="btn secondary" id="registerBtn">注册账号</button>
+            <button class="btn primary" id="loginBtn">登录控制台</button>
+          </div>
+        </div>
+        <div class="mini-log" id="authLog">请先登录或注册。</div>
+      </div>
+    </section>
+
+    <section class="feature-strip" id="scenes">
+      <article><strong>NAS 访问</strong><span>飞牛/群晖服务外网访问</span></article>
+      <article><strong>游戏联机</strong><span>Minecraft / 私服端口映射</span></article>
+      <article><strong>远程桌面</strong><span>RDP、SSH、Web 管理面板</span></article>
+      <article><strong>开发调试</strong><span>Webhook、Demo、测试环境</span></article>
+    </section>
+
+    <section class="pricing-preview" id="pricing">
+      <div>
+        <div class="eyebrow">Pricing</div>
+        <h2>登录后选择套餐并支付</h2>
+        <p>套餐购买和兑换码入口在控制台内，避免未登录时误配置隧道。</p>
+      </div>
+      <div class="price-card">
+        <span>默认套餐</span>
+        <strong>¥9.90</strong>
+        <small>100GB 流量 / 10.24Mbps / TCP UDP HTTP HTTPS</small>
+      </div>
+    </section>
+  </main>
+</section>
+
+<section id="appView" class="app-shell" hidden>
   <aside class="side">
-    <div class="brand"><div class="logo"></div>FRP Panel</div>
+    <div class="brand"><div class="logo"></div><span>FRP Panel</span></div>
     <nav class="nav">
-      <a class="active">概览</a>
-      <a>注册登录</a>
-      <a>兑换套餐</a>
-      <a>新增隧道</a>
-      <a>购买套餐</a>
+      <a class="active" href="#overview">概览</a>
+      <a href="#plans">套餐购买</a>
+      <a href="#tunnels">隧道配置</a>
+      <a href="#traffic">流量上报</a>
     </nav>
   </aside>
   <main class="main">
@@ -23,37 +88,40 @@
       <div>
         <div class="eyebrow">User console</div>
         <h1 class="title">我的内网穿透</h1>
-        <p class="subtitle">注册、登录、兑换套餐、创建隧道，并为单条隧道设置不超过套餐的限速。</p>
+        <p class="subtitle">已登录后可购买套餐、兑换套餐、创建隧道和查看状态。</p>
       </div>
-      <button class="btn primary" id="refreshBtn">刷新</button>
+      <div class="top-actions"><button class="btn secondary" id="refreshBtn">刷新</button><button class="btn danger" id="logoutBtn">退出</button></div>
     </div>
 
-    <section class="grid cards">
-      <div class="card"><div class="label">登录邮箱</div><div class="metric" id="emailState">未登录</div><span class="badge orange" id="loginBadge">guest</span></div>
+    <section class="grid cards" id="overview">
+      <div class="card"><div class="label">登录邮箱</div><div class="metric" id="emailState">-</div><span class="badge green" id="loginBadge">logged in</span></div>
       <div class="card"><div class="label">套餐</div><div class="metric" id="planState">无</div><span class="badge red" id="subBadge">inactive</span></div>
       <div class="card"><div class="label">剩余流量</div><div class="metric" id="trafficState">-</div><span class="badge blue" id="todayTrafficState">today -</span></div>
       <div class="card"><div class="label">隧道数量</div><div class="metric" id="tunnelCount">0</div><span class="badge green">tunnels</span></div>
     </section>
 
-    <section class="split" style="margin-top:16px">
-      <div class="card">
-        <h2>注册 / 登录</h2>
-        <div class="form">
-          <input class="input" id="apiBase" placeholder="API 地址，默认 http://127.0.0.1:8080">
-          <input class="input" id="email" placeholder="邮箱">
-          <input class="input" id="password" type="password" placeholder="密码">
-          <div><button class="btn secondary" id="sendCodeBtn">发送验证码</button> <input class="input" id="code" style="width:150px;display:inline-block" placeholder="验证码"></div>
-          <div><button class="btn secondary" id="registerBtn">注册</button> <button class="btn primary" id="loginBtn">登录</button></div>
-        </div>
-        <h2>兑换套餐</h2>
-        <div class="form"><input class="input" id="redeemCode" value="DEMO-PLAN-2026" placeholder="兑换码"><button class="btn primary" id="redeemBtn">兑换</button></div>
+    <section class="split" id="plans" style="margin-top:16px">
+      <div class="card hero">
+        <h2>购买套餐</h2>
+        <p class="subtitle">选择套餐后跳转到易支付收银台，支付成功自动开通。</p>
+        <table>
+          <thead><tr><th>套餐</th><th>价格</th><th>流量</th><th>限速</th><th>操作</th></tr></thead>
+          <tbody id="planBuyRows"><tr><td colspan="5">加载中</td></tr></tbody>
+        </table>
       </div>
+      <div class="card">
+        <h2>兑换套餐</h2>
+        <p class="subtitle">如果你已有兑换码，也可以直接兑换。</p>
+        <div class="form"><input class="input" id="redeemCode" placeholder="兑换码"><button class="btn primary" id="redeemBtn">兑换</button></div>
+      </div>
+    </section>
 
+    <section class="split" id="tunnels" style="margin-top:16px">
       <div class="card">
         <h2>创建隧道</h2>
         <div class="form">
           <input class="input" id="tunnelName" value="web" placeholder="隧道名称">
-          <input class="input" id="tunnelType" value="http" placeholder="协议 tcp / udp / http / https">
+          <select class="input" id="tunnelType"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="tcp">TCP</option><option value="udp">UDP</option></select>
           <input class="input" id="localHost" value="127.0.0.1" placeholder="本地地址">
           <input class="input" id="localPort" value="8080" placeholder="本地端口">
           <input class="input" id="domain" placeholder="HTTP/HTTPS 域名">
@@ -61,46 +129,40 @@
           <p class="field-hint" id="bandwidthLimitHint">0 表示继承套餐限速</p>
           <button class="btn primary" id="createTunnelBtn">创建隧道</button>
         </div>
-        <p>隧道限速不能超过当前套餐限速。</p>
-        <p>CNAME 目标：</p>
-        <div class="code" id="cnameHint">app.user.com CNAME frp.example.com</div>
+        <div class="code" id="cnameHint">HTTP/HTTPS: app.user.com CNAME frp.example.com</div>
+      </div>
+      <div class="card">
+        <h2>我的隧道</h2>
+        <table>
+          <thead><tr><th>名称</th><th>协议</th><th>入口</th><th>限速</th><th>状态</th></tr></thead>
+          <tbody id="tunnelRows"><tr><td colspan="5">暂无数据</td></tr></tbody>
+        </table>
       </div>
     </section>
 
-    <section class="card" style="margin-top:16px">
-      <h2>购买套餐</h2>
-      <p class="subtitle">选择套餐后将跳转到易支付收银台，支付成功后自动开通套餐。</p>
-      <table>
-        <thead><tr><th>套餐</th><th>价格</th><th>流量</th><th>限速</th><th>操作</th></tr></thead>
-        <tbody id="planBuyRows"><tr><td colspan="5">登录后加载套餐</td></tr></tbody>
-      </table>
-    </section>
-
-    <section class="card" style="margin-top:16px">
-      <h2>我的隧道</h2>
-      <table>
-        <thead><tr><th>名称</th><th>协议</th><th>入口</th><th>本地</th><th>限速</th><th>状态</th></tr></thead>
-        <tbody id="tunnelRows"><tr><td colspan="6">暂无数据</td></tr></tbody>
-      </table>
-      <h2>模拟流量上报</h2>
-      <div class="form">
-        <input class="input" id="reportTunnelId" placeholder="隧道 ID，可留空">
-        <input class="input" id="bytesIn" value="1024" placeholder="入站 bytes">
-        <input class="input" id="bytesOut" value="2048" placeholder="出站 bytes">
-        <button class="btn secondary" id="reportTrafficBtn">上报流量</button>
+    <section class="card" id="traffic" style="margin-top:16px">
+      <h2>流量上报 / 操作日志</h2>
+      <div class="traffic-grid">
+        <div class="form">
+          <input class="input" id="reportTunnelId" placeholder="隧道 ID，可留空">
+          <input class="input" id="bytesIn" value="1024" placeholder="入站 bytes">
+          <input class="input" id="bytesOut" value="2048" placeholder="出站 bytes">
+          <button class="btn secondary" id="reportTrafficBtn">上报流量</button>
+        </div>
+        <div class="log" id="logBox">ready</div>
       </div>
-      <h2>操作日志</h2>
-      <div class="log" id="logBox">ready</div>
     </section>
   </main>
-</div>
+</section>
 <script>
 const $ = id => document.getElementById(id);
 let token = localStorage.getItem('token') || '';
-let apiBase = localStorage.getItem('apiBase') || 'http://127.0.0.1:8080';
+let apiBase = localStorage.getItem('apiBase') || location.origin;
+let hasActiveSubscription = false;
 $('apiBase').value = apiBase;
+function base() { apiBase = $('apiBase').value || location.origin; localStorage.setItem('apiBase', apiBase); return apiBase.replace(/\/$/, ''); }
+function writeAuth(x) { $('authLog').textContent = typeof x === 'string' ? x : JSON.stringify(x, null, 2); }
 function log(x) { $('logBox').textContent = (typeof x === 'string' ? x : JSON.stringify(x, null, 2)) + '\n' + $('logBox').textContent; }
-function base() { apiBase = $('apiBase').value || 'http://127.0.0.1:8080'; localStorage.setItem('apiBase', apiBase); return apiBase.replace(/\/$/, ''); }
 async function api(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = 'Bearer ' + token;
@@ -109,97 +171,63 @@ async function api(path, opts = {}) {
   if (!r.ok || j.success === false) throw new Error(j.message || r.statusText);
   return j.data;
 }
+function showAuth() { $('authView').hidden = false; $('appView').hidden = true; }
+function showApp() { $('authView').hidden = true; $('appView').hidden = false; refresh(); }
+function requireAuth() { if (!token) { showAuth(); return false; } showApp(); return true; }
 function fmtBytes(n) { if (!n) return '-'; return (n / 1024 / 1024 / 1024).toFixed(1) + ' GB'; }
-function mbpsToKbps(v) {
-  if (!v || v < 0) return 0;
-  return Math.round(v * 1000);
-}
-function fmtMbpsFromKbps(v) {
-  if (!v || v < 0) return '-';
-  return (v / 1000).toFixed(2) + ' Mbps';
-}
-function fmtMBpsFromKbps(v) {
-  if (!v || v < 0) return '-';
-  return (v / 8000).toFixed(2) + ' MB/s';
-}
 function fmtMoney(cents) { return '¥' + ((Number(cents)||0) / 100).toFixed(2); }
-function updateBandwidthLimitHint() {
-  const limit = Number($('bandwidthLimit').value) || 0;
-  $('bandwidthLimitHint').textContent = limit > 0 ? '≈ ' + (limit / 8).toFixed(3) + ' MB/s' : '0 表示继承套餐限速';
-}
-function fmtLimit(t) {
-  const effective = t.effective_bandwidth_limit_kbps || t.bandwidth_limit_kbps || 0;
-  if (!effective) return '继承/不限';
-  return fmtMbpsFromKbps(effective) + '（≈ ' + fmtMBpsFromKbps(effective) + '）';
-}
+function mbpsToKbps(v) { return (!v || v < 0) ? 0 : Math.round(v * 1000); }
+function fmtMbpsFromKbps(v) { return (!v || v < 0) ? '-' : (v / 1000).toFixed(2) + ' Mbps'; }
+function fmtMBpsFromKbps(v) { return (!v || v < 0) ? '-' : (v / 8000).toFixed(2) + ' MB/s'; }
+function fmtLimit(t) { const effective = t.effective_bandwidth_limit_kbps || t.bandwidth_limit_kbps || 0; return effective ? fmtMbpsFromKbps(effective) + ' / ' + fmtMBpsFromKbps(effective) : '继承/不限'; }
+function updateBandwidthLimitHint() { const limit = Number($('bandwidthLimit').value) || 0; $('bandwidthLimitHint').textContent = limit > 0 ? '≈ ' + (limit / 8).toFixed(3) + ' MB/s' : '0 表示继承套餐限速'; }
 async function refresh() {
+  if (!token) return showAuth();
   try {
-    if (!token) { $('planBuyRows').innerHTML = '<tr><td colspan="5">请先登录后购买</td></tr>'; return; }
     const me = await api('/api/auth/me');
     $('emailState').textContent = me.email;
-    $('loginBadge').textContent = 'logged in';
-    $('loginBadge').className = 'badge green';
     try {
       const sub = await api('/api/user/subscription');
+      hasActiveSubscription = sub.status === 'active';
       $('planState').textContent = sub.plan_name;
       $('subBadge').textContent = sub.status;
       $('subBadge').className = 'badge green';
       $('trafficState').textContent = fmtBytes(sub.traffic_limit_bytes - sub.traffic_used_bytes);
-      try {
-        const tr = await api('/api/user/traffic');
-        $('trafficState').textContent = fmtBytes(tr.traffic_left_bytes);
-        $('todayTrafficState').textContent = 'today ' + fmtBytes(tr.today_bytes);
-      } catch (_) {}
-    } catch (e) {
-      $('planState').textContent = '无';
-      $('subBadge').textContent = 'inactive';
-      $('subBadge').className = 'badge red';
+      const tr = await api('/api/user/traffic').catch(() => null);
+      if (tr) { $('trafficState').textContent = fmtBytes(tr.traffic_left_bytes); $('todayTrafficState').textContent = 'today ' + fmtBytes(tr.today_bytes); }
+    } catch (_) {
+      $('planState').textContent = '未开通'; $('subBadge').textContent = 'inactive'; $('subBadge').className = 'badge red'; $('trafficState').textContent = '-';
+      hasActiveSubscription = false;
     }
     await loadPlans();
-    const tunnels = await api('/api/tunnels');
+    $('createTunnelBtn').disabled = !hasActiveSubscription;
+    $('createTunnelBtn').textContent = hasActiveSubscription ? '创建隧道' : '请先购买或兑换套餐';
+    const tunnels = (await api('/api/tunnels')) || [];
     $('tunnelCount').textContent = tunnels.length;
-    $('tunnelRows').innerHTML = tunnels.map(t => `<tr><td>${t.name}</td><td>${t.type}</td><td>${t.public_url || ''}</td><td>${t.local_host}:${t.local_port}</td><td>${fmtLimit(t)}</td><td><span class="badge orange">${t.status}</span></td></tr>`).join('') || '<tr><td colspan="6">暂无数据</td></tr>';
+    $('tunnelRows').innerHTML = tunnels.map(t => `<tr><td>${t.name}</td><td>${t.type}</td><td>${t.public_url || ''}<br><small>${t.local_host}:${t.local_port}</small></td><td>${fmtLimit(t)}</td><td><span class="badge orange">${t.status}</span></td></tr>`).join('') || '<tr><td colspan="5">暂无数据</td></tr>';
   } catch (e) {
     log('刷新失败: ' + e.message);
+    if (/认证|登录|Unauthorized|UNAUTHORIZED/i.test(e.message)) { token = ''; localStorage.removeItem('token'); showAuth(); }
   }
 }
-
 async function loadPlans() {
-  const plans = await api('/api/user/plans');
+  const plans = (await api('/api/user/plans')) || [];
   $('planBuyRows').innerHTML = plans.map(p => `<tr><td>${p.name}<br><small>${p.description || ''}</small></td><td>${fmtMoney(p.price_cents)}</td><td>${fmtBytes(p.traffic_limit_bytes)}</td><td>${fmtMbpsFromKbps(p.bandwidth_limit_kbps)}</td><td><button class="btn primary" onclick="buyPlan(${p.id})">去支付</button></td></tr>`).join('') || '<tr><td colspan="5">暂无可购买套餐</td></tr>';
 }
 async function buyPlan(planId) {
-  try {
-    const order = await api('/api/payments/epay/orders', { method: 'POST', body: JSON.stringify({ plan_id: planId, pay_type: 'alipay' }) });
-    log('订单已创建：' + order.out_trade_no + '，金额 ¥' + order.money);
-    window.location.href = order.pay_url;
-  } catch (e) { log(e.message); }
+  try { const order = await api('/api/payments/epay/orders', { method: 'POST', body: JSON.stringify({ plan_id: planId, pay_type: 'alipay' }) }); log('订单已创建：' + order.out_trade_no + '，金额 ¥' + order.money); location.href = order.pay_url; } catch (e) { log(e.message); }
 }
-$('sendCodeBtn').onclick = async () => { try { const d = await api('/api/auth/send-email-code', { method: 'POST', body: JSON.stringify({ email: $('email').value, purpose: 'register' }) }); $('code').value = d.dev_code || ''; log(d); } catch (e) { log(e.message); } };
-$('registerBtn').onclick = async () => { try { log(await api('/api/auth/register', { method: 'POST', body: JSON.stringify({ email: $('email').value, password: $('password').value, code: $('code').value }) })); } catch (e) { log(e.message); } };
-$('loginBtn').onclick = async () => { try { const d = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: $('email').value, password: $('password').value }) }); token = d.access_token; localStorage.setItem('token', token); log('登录成功'); refresh(); } catch (e) { log(e.message); } };
+$('sendCodeBtn').onclick = async () => { try { const d = await api('/api/auth/send-email-code', { method: 'POST', body: JSON.stringify({ email: $('email').value, purpose: 'register' }) }); $('code').value = d.dev_code || ''; writeAuth('验证码已发送'); } catch (e) { writeAuth(e.message); } };
+$('registerBtn').onclick = async () => { try { await api('/api/auth/register', { method: 'POST', body: JSON.stringify({ email: $('email').value, password: $('password').value, code: $('code').value }) }); writeAuth('注册成功，现在可以登录。'); } catch (e) { writeAuth(e.message); } };
+$('loginBtn').onclick = async () => { try { const d = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: $('email').value, password: $('password').value }) }); token = d.access_token; localStorage.setItem('token', token); showApp(); } catch (e) { writeAuth(e.message); } };
+$('logoutBtn').onclick = () => { token = ''; localStorage.removeItem('token'); showAuth(); };
 $('redeemBtn').onclick = async () => { try { log(await api('/api/user/redeem', { method: 'POST', body: JSON.stringify({ code: $('redeemCode').value }) })); refresh(); } catch (e) { log(e.message); } };
-$('createTunnelBtn').onclick = async () => {
-  try {
-    const body = {
-      name: $('tunnelName').value,
-      type: $('tunnelType').value,
-      local_host: $('localHost').value,
-      local_port: Number($('localPort').value),
-      domain: $('domain').value,
-      use_https: $('tunnelType').value === 'https',
-      bandwidth_limit_kbps: mbpsToKbps(Number($('bandwidthLimit').value) || 0)
-    };
-    const created = await api('/api/tunnels', { method: 'POST', body: JSON.stringify(body) });
-    log('隧道创建成功：' + created.name + '，限速 ' + fmtLimit(created));
-    refresh();
-  } catch (e) { log(e.message); }
-};
-$('bandwidthLimit').addEventListener('input', updateBandwidthLimitHint);
-updateBandwidthLimitHint();
+$('createTunnelBtn').onclick = async () => { try { if (!hasActiveSubscription) { log('请先购买套餐或兑换套餐，再创建隧道。'); return; } const body = { name: $('tunnelName').value, type: $('tunnelType').value, local_host: $('localHost').value, local_port: Number($('localPort').value), domain: $('domain').value, use_https: $('tunnelType').value === 'https', bandwidth_limit_kbps: mbpsToKbps(Number($('bandwidthLimit').value) || 0) }; const created = await api('/api/tunnels', { method: 'POST', body: JSON.stringify(body) }); log('隧道创建成功：' + created.name); refresh(); } catch (e) { log(e.message); } };
 $('reportTrafficBtn').onclick = async () => { try { log(await api('/api/client/traffic', { method: 'POST', body: JSON.stringify({ reports: [{ tunnel_id: Number($('reportTunnelId').value) || 0, bytes_in: Number($('bytesIn').value) || 0, bytes_out: Number($('bytesOut').value) || 0 }] }) })); refresh(); } catch (e) { log(e.message); } };
 $('refreshBtn').onclick = refresh;
-refresh();
+$('bandwidthLimit').addEventListener('input', updateBandwidthLimitHint);
+updateBandwidthLimitHint();
+requireAuth();
 </script>
 </body>
 </html>
