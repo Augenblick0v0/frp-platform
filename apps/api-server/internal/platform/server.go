@@ -534,6 +534,19 @@ func (s *Server) adminNodeAction(w http.ResponseWriter, r *http.Request) {
 		ok(w, node)
 		return
 	}
+	if action == "delete" {
+		if r.Method != http.MethodDelete && r.Method != http.MethodPost {
+			w.WriteHeader(405)
+			return
+		}
+		if err := s.store.DeleteNode(node.ID); err != nil {
+			handleErr(w, err)
+			return
+		}
+		s.recordAdminOperation(r, "node.delete", node.Name, node.AgentURL)
+		ok(w, map[string]any{"deleted": true, "id": node.ID})
+		return
+	}
 	client := NewNodeAgentClient(node.AgentURL, node.AgentToken)
 	switch action {
 	case "status":

@@ -202,7 +202,7 @@ function nodesPage() {
 }
 function nodesTable() {
   if (!state.nodes.length) return '<div class="empty">暂无节点</div>';
-  return `<div class="table-wrap"><table><thead><tr><th>ID</th><th>节点</th><th>Agent</th><th>入口</th><th>状态</th><th>操作</th></tr></thead><tbody>${state.nodes.map(n => `<tr><td>${n.id}</td><td><b>${h(n.name)}</b><small>bind: ${h(n.bind_token || '-')}</small></td><td>${h(n.agent_url || '-')}</td><td>${h(n.frp_entry_domain || '-')}<small>${h(n.server_addr || '')}:${h(n.frp_server_port || 7000)}</small></td><td>${badge(n.status)}</td><td class="actions"><button class="btn secondary small" data-node="${n.id}" data-action="status">状态</button><button class="btn secondary small" data-node="${n.id}" data-action="frps-config">配置</button><button class="btn secondary small" data-node="${n.id}" data-action="frps-logs">日志</button><button class="btn secondary small" data-node="${n.id}" data-action="frps-restart" data-method="POST">重启</button></td></tr>`).join('')}</tbody></table></div>`;
+  return `<div class="table-wrap"><table><thead><tr><th>ID</th><th>节点</th><th>Agent</th><th>入口</th><th>状态</th><th>操作</th></tr></thead><tbody>${state.nodes.map(n => `<tr><td>${n.id}</td><td><b>${h(n.name)}</b><small>bind: ${h(n.bind_token || '-')}</small></td><td>${h(n.agent_url || '-')}</td><td>${h(n.frp_entry_domain || '-')}<small>${h(n.server_addr || '')}:${h(n.frp_server_port || 7000)}</small></td><td>${badge(n.status)}</td><td class="actions"><button class="btn secondary small" data-node="${n.id}" data-action="status">状态</button><button class="btn secondary small" data-node="${n.id}" data-action="frps-config">配置</button><button class="btn secondary small" data-node="${n.id}" data-action="frps-logs">日志</button><button class="btn secondary small" data-node="${n.id}" data-action="frps-restart" data-method="POST">重启</button><button class="btn danger small" data-node-delete="${n.id}" data-node-name="${h(n.name)}">删除</button></td></tr>`).join('')}</tbody></table></div>`;
 }
 function certificatesPage() {
   return `<section class="split"><div class="card accent"><h2>证书管理</h2><p class="subtitle">证书由用户端提交申请，后台负责全局查看、续期和网关配置管理。</p><div class="form"><label class="field"><span>用户域名</span><input class="input" id="domainName" placeholder="例如 app.user.com"></label><label class="field"><span>CNAME 目标</span><input class="input" id="cnameTarget" placeholder="例如 frp.example.com"></label><button class="btn secondary" id="checkCnameBtn">检测 CNAME</button><button class="btn secondary" id="renderNginxBtn">生成 HTTPS Nginx 配置</button><button class="btn secondary" id="renewDueBtn">续期到期证书</button><button class="btn secondary" id="forceRenewBtn">强制续期全部</button><button class="btn secondary" id="testNginxBtn">测试 Nginx</button><button class="btn secondary" id="reloadNginxBtn">Reload Nginx</button></div></div><div class="card"><h2>全部证书</h2>${certTable()}</div></section>`;
@@ -229,6 +229,14 @@ function bindPage(path) {
   if (path === '/nodes') {
     $('createNodeBtn').onclick = async () => { try { const node = await api('/api/admin/nodes', { method: 'POST', body: JSON.stringify({ name: $('nodeName').value, agent_url: $('nodeAgentUrl').value, frp_entry_domain: $('nodeEntryDomain').value, server_addr: $('nodeServerAddr').value, frp_server_port: Number($('nodeFrpsPort').value), tcp_port_start: Number($('nodeTcpStart').value), tcp_port_end: Number($('nodeTcpEnd').value), udp_port_start: Number($('nodeUdpStart').value), udp_port_end: Number($('nodeUdpEnd').value) }) }); log('节点已创建，NODE_BIND_TOKEN：' + node.bind_token); render(); } catch (e) { log(e.message); } };
     document.querySelectorAll('[data-node]').forEach(btn => btn.onclick = async () => { try { log(await api(`/api/admin/nodes/${btn.dataset.node}/${btn.dataset.action}`, { method: btn.dataset.method || 'GET' })); } catch (e) { log(e.message); } });
+    document.querySelectorAll('[data-node-delete]').forEach(btn => btn.onclick = async () => {
+      const name = btn.dataset.nodeName || ('#' + btn.dataset.nodeDelete);
+      if (!confirm('确认删除节点 ' + name + '？删除后该节点需要重新新增并绑定。')) return;
+      try {
+        log(await api(`/api/admin/nodes/${btn.dataset.nodeDelete}/delete`, { method: 'DELETE' }));
+        render();
+      } catch (e) { log(e.message); }
+    });
   }
   if (path === '/certificates') {
     const domainBody = () => ({ domain: $('domainName').value, target: $('cnameTarget').value });

@@ -553,6 +553,17 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 RETURNING id,name,coalesce(agent_url,''),agent_token,bind_token,coalesce(public_url,''),coalesce(frp_entry_domain,''),coalesce(server_addr,''),frp_server_port,tcp_port_start,tcp_port_end,udp_port_start,udp_port_end,status,last_seen_at,coalesce(last_error,''),created_at,updated_at`, node.Name, node.AgentURL, node.AgentToken, node.BindToken, node.PublicURL, node.FRPEntryDomain, node.ServerAddr, node.FRPServerPort, node.TCPPortStart, node.TCPPortEnd, node.UDPPortStart, node.UDPPortEnd, node.Status))
 }
 
+func (s *SQLStore) DeleteNode(id int64) error {
+	res, err := s.db.Exec(`DELETE FROM nodes WHERE id=$1`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *SQLStore) BindNode(req NodeBindRequest) (Node, error) {
 	now := time.Now()
 	res, err := s.db.Exec(`UPDATE nodes SET

@@ -27,6 +27,7 @@ type Backend interface {
 	Nodes() []Node
 	Node(id int64) (Node, error)
 	CreateNode(node Node) (Node, error)
+	DeleteNode(id int64) error
 	BindNode(req NodeBindRequest) (Node, error)
 	UpdateNodeStatus(id int64, status string, lastError string) (Node, error)
 	ReportTraffic(userID int64, reports []TrafficReport) (TrafficSummary, error)

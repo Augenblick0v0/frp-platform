@@ -606,6 +606,18 @@ func (s *Store) CreateNode(node Node) (Node, error) {
 	return node, nil
 }
 
+func (s *Store) DeleteNode(id int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n, ok := s.nodes[id]
+	if !ok {
+		return ErrNotFound
+	}
+	delete(s.nodesByBind, n.BindToken)
+	delete(s.nodes, id)
+	return nil
+}
+
 func (s *Store) BindNode(req NodeBindRequest) (Node, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

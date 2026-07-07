@@ -377,6 +377,27 @@ func TestAdminNodeCreateBindAndRemoteStatus(t *testing.T) {
 	}
 }
 
+func TestAdminNodeDelete(t *testing.T) {
+	store := NewStore()
+	s := NewServer(store)
+	login := post(t, s, "/api/admin/login", map[string]any{"email": "admin@example.com", "password": "admin123456"}, "")
+	token := login["access_token"].(string)
+
+	created := post(t, s, "/api/admin/nodes", map[string]any{"name": "delete-me", "agent_url": "http://127.0.0.1:8090", "frp_entry_domain": "frp.example.com", "server_addr": "frp.example.com"}, token)
+	nodeID := int64(created["id"].(float64))
+	rr := request(t, s, "DELETE", fmt.Sprintf("/api/admin/nodes/%d/delete", nodeID), nil, token)
+	if rr.Code != 200 {
+		t.Fatalf("delete code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if len(store.Nodes()) != 0 {
+		t.Fatalf("expected node deleted, got %#v", store.Nodes())
+	}
+	rr = request(t, s, "DELETE", fmt.Sprintf("/api/admin/nodes/%d/delete", nodeID), nil, token)
+	if rr.Code != 404 {
+		t.Fatalf("expected deleting missing node to return 404, got code=%d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestClientTunnelsReturnsRuntimeFRPToken(t *testing.T) {
 	t.Setenv("FRP_TOKEN", "test-runtime-token")
 	s := NewServer(NewStore())
