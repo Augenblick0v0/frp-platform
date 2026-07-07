@@ -212,3 +212,22 @@ td small { color: #64748b; margin-top: 4px; }
 .console-shell .console-nav { display: grid !important; grid-template-columns: 1fr !important; }
 @media (max-width: 1040px) { .console-shell { grid-template-columns: 240px minmax(0, 1fr) !important; } .console-shell.is-collapsed { grid-template-columns: 92px minmax(0, 1fr) !important; } }
 @media (max-width: 640px) { .console-shell { grid-template-columns: 210px minmax(0, 1fr) !important; } .console-shell.is-collapsed { grid-template-columns: 82px minmax(0, 1fr) !important; } }
+/* Mobile: keep sidebar on the left but leave enough room for content. */
+@media (max-width: 640px) {
+  .console-shell { grid-template-columns: 148px minmax(0, 1fr) !important; }
+  .console-shell.is-collapsed { grid-template-columns: 60px minmax(0, 1fr) !important; }
+  .console-shell .console-side { padding: 12px 8px !important; }
+  .console-shell .side-head { gap: 6px; margin-bottom: 14px; }
+  .console-shell .logo-mark { width: 32px; height: 32px; border-radius: 11px; }
+  .console-shell .console-brand { gap: 7px; }
+  .console-shell .console-brand strong { font-size: 14px; }
+  .console-shell .console-brand small { display: none; }
+  .console-shell .side-toggle { width: 30px; height: 30px; border-radius: 10px; }
+  .console-shell .console-nav { gap: 6px; }
+  .console-shell .console-nav a { padding: 10px 8px 10px 12px; border-radius: 12px; }
+  .console-shell .console-nav a b { font-size: 13px; line-height: 1.15; }
+  .console-shell .console-nav small { display: none; }
+  .console-shell .console-main { padding: 12px !important; }
+  .console-shell.is-collapsed .console-nav a { padding: 10px 4px; }
+  .console-shell.is-collapsed .console-nav a b { font-size: 11px; }
+}
