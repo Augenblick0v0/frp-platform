@@ -181,9 +181,9 @@ function renderAuth(mode) {
           <p>${isRegister ? '已有账号？' : '还没有账号？'} <a href="#/${isRegister ? 'login' : 'register'}" data-route="/${isRegister ? 'login' : 'register'}">${isRegister ? '去登录' : '立即注册'}</a></p>
         </div>
         <div class="form-stack">
-          <label>邮箱<input class="input" id="email" type="email" autocomplete="email" placeholder="you@example.com"></label>
-          <label>密码<input class="input" id="password" type="password" autocomplete="${isRegister ? 'new-password' : 'current-password'}" placeholder="至少 4 位"></label>
-          ${isRegister ? `<label>验证码</label><div class="inline-form"><input class="input" id="code" placeholder="邮箱验证码"><button class="btn secondary" id="sendCodeBtn">发送验证码</button></div>` : ''}
+          <label class="field"><span>邮箱地址</span><input class="input" id="email" type="email" autocomplete="email" placeholder="you@example.com"></label>
+          <label class="field"><span>登录密码</span><input class="input" id="password" type="password" autocomplete="${isRegister ? 'new-password' : 'current-password'}" placeholder="至少 4 位"></label>
+          ${isRegister ? `<label class="field"><span>邮箱验证码</span><div class="inline-form"><input class="input" id="code" placeholder="请输入收到的验证码"><button class="btn secondary" id="sendCodeBtn">发送验证码</button></div></label>` : ''}
           <button class="btn primary full" id="${isRegister ? 'registerBtn' : 'loginBtn'}">${isRegister ? '注册账号' : '登录控制台'}</button>
         </div>
         <div class="mini-log" id="authLog">${isRegister ? '填写邮箱后发送验证码。' : '请输入邮箱和密码。'}</div>
@@ -321,7 +321,7 @@ function renderOverviewPage() {
 function renderBillingPage() {
   return `<div class="two-column wide-left">
     <section class="page-card"><h2>购买套餐</h2><p class="muted">选择套餐后跳转易支付收银台，支付成功由通知接口自动开通。</p>${plansTable()}</section>
-    <section class="page-card"><h2>兑换套餐</h2><p class="muted">已有兑换码可直接激活。</p><div class="form-stack"><input class="input" id="redeemCode" placeholder="兑换码"><button class="btn primary" id="redeemBtn">兑换</button></div><div class="mini-log compact" id="billingLog">等待操作</div></section>
+    <section class="page-card"><h2>兑换套餐</h2><p class="muted">已有兑换码可直接激活。</p><div class="form-stack"><label class="field"><span>兑换码</span><input class="input" id="redeemCode" placeholder="请输入套餐兑换码"></label><button class="btn primary" id="redeemBtn">兑换</button></div><div class="mini-log compact" id="billingLog">等待操作</div></section>
   </div>`;
 }
 function plansTable() {
@@ -332,12 +332,12 @@ function renderTunnelsPage() {
   return `<div class="two-column wide-left">
     <section class="page-card"><h2>我的隧道</h2>${tunnelTable(state.tunnels)}</section>
     <section class="page-card"><h2>创建隧道</h2><p class="muted">${state.activeSubscription ? '填写本地服务信息后创建映射。' : '当前未开通套餐，创建按钮已禁用。'}</p><div class="form-stack">
-      <input class="input" id="tunnelName" value="web" placeholder="隧道名称">
-      <select class="input" id="tunnelType"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="tcp">TCP</option><option value="udp">UDP</option></select>
-      <input class="input" id="localHost" value="127.0.0.1" placeholder="本地地址">
-      <input class="input" id="localPort" value="8080" placeholder="本地端口">
-      <input class="input" id="domain" placeholder="HTTP/HTTPS 域名">
-      <input class="input" id="bandwidthLimit" value="0" min="0" step="0.001" placeholder="隧道限速 Mbps，0 表示继承套餐">
+      <label class="field"><span>隧道名称</span><input class="input" id="tunnelName" value="web" placeholder="例如 web、ssh、game"></label>
+      <label class="field"><span>隧道协议</span><select class="input" id="tunnelType"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="tcp">TCP</option><option value="udp">UDP</option></select></label>
+      <label class="field"><span>本地地址</span><input class="input" id="localHost" value="127.0.0.1" placeholder="例如 127.0.0.1"></label>
+      <label class="field"><span>本地端口</span><input class="input" id="localPort" value="8080" placeholder="例如 8080"></label>
+      <label class="field"><span>绑定域名（HTTP/HTTPS）</span><input class="input" id="domain" placeholder="例如 app.example.com，TCP/UDP 可留空"></label>
+      <label class="field"><span>隧道限速 Mbps</span><input class="input" id="bandwidthLimit" value="0" min="0" step="0.001" placeholder="0 表示继承套餐"></label>
       <p class="field-hint" id="bandwidthLimitHint">0 表示继承套餐限速</p>
       <button class="btn primary full" id="createTunnelBtn" ${state.activeSubscription ? '' : 'disabled'}>${state.activeSubscription ? '创建隧道' : '请先购买或兑换套餐'}</button>
     </div><div class="code">HTTP/HTTPS: app.user.com CNAME frp.example.com</div></section>
@@ -350,9 +350,9 @@ function tunnelTable(tunnels) {
 function renderTrafficPage() {
   return `<div class="two-column wide-left">
     <section class="page-card"><h2>流量上报</h2><p class="muted">用于客户端或测试环境上报隧道流量。</p><div class="form-stack">
-      <input class="input" id="reportTunnelId" placeholder="隧道 ID，可留空">
-      <input class="input" id="bytesIn" value="1024" placeholder="入站 bytes">
-      <input class="input" id="bytesOut" value="2048" placeholder="出站 bytes">
+      <label class="field"><span>隧道 ID</span><input class="input" id="reportTunnelId" placeholder="可留空；指定时只上报该隧道"></label>
+      <label class="field"><span>入站流量 bytes</span><input class="input" id="bytesIn" value="1024" placeholder="例如 1024"></label>
+      <label class="field"><span>出站流量 bytes</span><input class="input" id="bytesOut" value="2048" placeholder="例如 2048"></label>
       <button class="btn secondary full" id="reportTrafficBtn">上报流量</button>
     </div></section>
     <section class="page-card"><h2>操作日志</h2><div class="log" id="logBox">${h(state.logLines.join('\n'))}</div></section>
@@ -361,8 +361,8 @@ function renderTrafficPage() {
 function renderCertificatesPage() {
   return `<div class="two-column wide-left">
     <section class="page-card accent"><h2>申请 HTTPS 证书</h2><p class="muted">证书由用户端提交申请，后台统一查看和续期管理。申请前请先把域名 CNAME 到平台入口。</p><div class="form-stack">
-      <input class="input" id="certDomain" placeholder="域名，例如 app.example.com">
-      <input class="input" id="certEmail" value="${h(state.me?.email || '')}" placeholder="Let's Encrypt 联系邮箱，可留空使用账号邮箱">
+      <label class="field"><span>申请证书的域名</span><input class="input" id="certDomain" placeholder="例如 app.example.com"></label>
+      <label class="field"><span>证书联系邮箱</span><input class="input" id="certEmail" value="${h(state.me?.email || '')}" placeholder="可留空，默认使用账号邮箱"></label>
       <button class="btn primary full" id="requestUserCertBtn">提交证书申请</button>
     </div><div class="code">提示：HTTP/HTTPS 隧道域名完成解析后，再提交证书申请。</div></section>
     <section class="page-card"><h2>申请结果</h2><div class="log" id="certLog">等待提交</div></section>
