@@ -178,3 +178,16 @@ td small { color: #64748b; margin-top: 4px; }
 .price-feature small { font-size: 15px; color: #ffd7aa; }
 .price-feature p { color: #ffe4c2; }
 @media (max-width: 1040px) { .commercial-grid, .trust-band { grid-template-columns: 1fr; } }
+.side-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 26px; }
+.side-toggle { width: 34px; height: 34px; border: 1px solid #e2e8f0; border-radius: 12px; background: #fff7ed; color: var(--orange-2); font-weight: 950; cursor: pointer; }
+.console-shell { transition: grid-template-columns .22s ease; }
+.console-shell.is-collapsed { grid-template-columns: 92px 1fr; }
+.console-shell.is-collapsed .console-side { padding: 18px 14px; }
+.console-shell.is-collapsed .console-brand span:last-child,
+.console-shell.is-collapsed .console-nav small { display: none; }
+.console-shell.is-collapsed .side-head { justify-content: center; flex-direction: column; }
+.console-shell.is-collapsed .console-nav a { justify-items: center; padding: 13px 8px; }
+.console-shell.is-collapsed .console-nav a b { font-size: 12px; text-align: center; }
+.console-shell.is-collapsed .console-nav a:before { left: 3px; }
+.cert-result { min-height: 220px; }
+@media (max-width: 1040px) { .console-shell.is-collapsed { grid-template-columns: 1fr; } }

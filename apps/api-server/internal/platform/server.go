@@ -51,6 +51,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/user/redeem", s.auth(s.redeem))
 	s.mux.HandleFunc("/api/user/purchase-info", s.auth(s.purchaseInfo))
 	s.mux.HandleFunc("/api/user/traffic", s.auth(s.userTraffic))
+	s.mux.HandleFunc("/api/user/certificates/request", s.auth(s.userRequestCertificate))
 	s.mux.HandleFunc("/api/tunnels", s.auth(s.tunnels))
 	s.mux.HandleFunc("/api/speed-tests/tunnels", s.auth(s.createSpeedTestTunnel))
 	s.mux.HandleFunc("/api/speed-tests/", s.auth(s.finishSpeedTestTunnel))
@@ -268,6 +269,45 @@ func (s *Server) userTraffic(w http.ResponseWriter, r *http.Request, u User) {
 	}
 	ok(w, summary)
 }
+func (s *Server) userRequestCertificate(w http.ResponseWriter, r *http.Request, u User) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(405)
+		return
+	}
+	var in struct {
+		Domain string `json:"domain"`
+		Email  string `json:"email"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	if strings.TrimSpace(in.Email) == "" {
+		in.Email = u.Email
+	}
+	res, err := s.automation.RequestCertificate(r.Context(), in.Domain, in.Email)
+	status := "issued"
+	errorMessage := ""
+	if res.DryRun {
+		status = "dry_run"
+	}
+	if err != nil {
+		status = "failed"
+		errorMessage = err.Error()
+	}
+	certPath, keyPath := s.automation.CertificatePaths(in.Domain)
+	issuedAt, expiresAt := s.automation.InspectCertificate(in.Domain)
+	record, saveErr := s.store.SaveCertificate(CertificateRecord{Domain: in.Domain, Status: status, IssuedAt: issuedAt, ExpiresAt: expiresAt, CertPath: certPath, KeyPath: keyPath, LastCommand: res.Command, LastOutput: res.Output, ErrorMessage: errorMessage})
+	if saveErr != nil {
+		fail(w, 500, "CERTIFICATE_SAVE_FAILED", saveErr.Error())
+		return
+	}
+	if err != nil {
+		fail(w, 500, "CERTIFICATE_REQUEST_FAILED", err.Error()+"\n"+res.Output)
+		return
+	}
+	ok(w, map[string]any{"result": res, "record": record})
+}
+
 func (s *Server) tunnels(w http.ResponseWriter, r *http.Request, u User) {
 	switch r.Method {
 	case http.MethodGet:

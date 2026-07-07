@@ -13,7 +13,8 @@ const $ = id => document.getElementById(id);
 const app = $('adminApp');
 const state = {
   token: localStorage.getItem('adminToken') || '',
-  apiBase: localStorage.getItem('adminApiBase') || location.origin,
+  apiBase: location.origin,
+  sidebarCollapsed: localStorage.getItem('adminSidebarCollapsed') === 'true',
   dashboard: null,
   users: [],
   plans: [],
@@ -44,16 +45,19 @@ function normalizeRoute(path) {
   if (path === '/login' && state.token) return '/dashboard';
   return adminRoutes.some(item => item.path === path) || path === '/login' ? path : '/dashboard';
 }
-function saveApiBase() {
-  const input = $('apiBase');
-  if (input) state.apiBase = input.value || location.origin;
-  localStorage.setItem('adminApiBase', state.apiBase);
+function apiOrigin() {
+  state.apiBase = location.origin;
   return state.apiBase.replace(/\/$/, '');
+}
+function toggleAdminSidebar() {
+  state.sidebarCollapsed = !state.sidebarCollapsed;
+  localStorage.setItem('adminSidebarCollapsed', String(state.sidebarCollapsed));
+  render();
 }
 async function api(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
   if (state.token) headers.Authorization = 'Bearer ' + state.token;
-  const response = await fetch(saveApiBase() + path, { ...opts, headers });
+  const response = await fetch(apiOrigin() + path, { ...opts, headers });
   const json = await response.json().catch(() => ({ success: false, message: response.statusText }));
   if (!response.ok || json.success === false) throw new Error(json.message || response.statusText);
   return json.data;
@@ -86,7 +90,6 @@ function renderLogin() {
       <span class="eyebrow">Admin Login</span>
       <h2>管理员登录</h2>
       <div class="form">
-        <label>API 地址<input class="input" id="apiBase" value="${h(state.apiBase)}" placeholder="默认当前站点"></label>
         <label>管理员邮箱<input class="input" id="adminEmail" value="admin@example.com" autocomplete="username"></label>
         <label>管理员密码<input class="input" id="adminPassword" type="password" autocomplete="current-password"></label>
         <button class="btn primary full" id="adminLoginBtn">登录后台</button>
@@ -136,9 +139,12 @@ async function renderAdmin(path) {
 }
 function shell(path, body) {
   const active = adminRoutes.find(item => item.path === path) || adminRoutes[0];
-  return `<div class="admin-shell">
+  return `<div class="admin-shell ${state.sidebarCollapsed ? 'is-collapsed' : ''}">
     <aside class="side">
-      <a class="brand" href="#/dashboard" data-route="/dashboard"><span class="logo"></span><span><strong>FRP Admin</strong><small>Operation Console</small></span></a>
+      <div class="side-head">
+        <a class="brand" href="#/dashboard" data-route="/dashboard"><span class="logo"></span><span><strong>FRP Admin</strong><small>Operation Console</small></span></a>
+        <button class="side-toggle" id="adminSidebarToggle" title="收缩/展开侧栏">${state.sidebarCollapsed ? '›' : '‹'}</button>
+      </div>
       <nav class="nav">${adminRoutes.map(item => `<a class="${item.path === path ? 'active' : ''}" href="#${item.path}" data-route="${item.path}"><b>${item.label}</b><small>${item.desc}</small></a>`).join('')}</nav>
     </aside>
     <main class="main">
@@ -149,6 +155,7 @@ function shell(path, body) {
 }
 function bindShell() {
   bindRoutes(app);
+  const toggle = $('adminSidebarToggle'); if (toggle) toggle.onclick = toggleAdminSidebar;
   const refresh = $('refreshBtn'); if (refresh) refresh.onclick = render;
   const logout = $('logoutBtn'); if (logout) logout.onclick = () => { state.token = ''; localStorage.removeItem('adminToken'); navigate('/login'); };
 }
@@ -198,7 +205,7 @@ function nodesTable() {
   return `<div class="table-wrap"><table><thead><tr><th>ID</th><th>节点</th><th>Agent</th><th>入口</th><th>状态</th><th>操作</th></tr></thead><tbody>${state.nodes.map(n => `<tr><td>${n.id}</td><td><b>${h(n.name)}</b><small>bind: ${h(n.bind_token || '-')}</small></td><td>${h(n.agent_url || '-')}</td><td>${h(n.frp_entry_domain || '-')}<small>${h(n.server_addr || '')}:${h(n.frp_server_port || 7000)}</small></td><td>${badge(n.status)}</td><td class="actions"><button class="btn secondary small" data-node="${n.id}" data-action="status">状态</button><button class="btn secondary small" data-node="${n.id}" data-action="frps-config">配置</button><button class="btn secondary small" data-node="${n.id}" data-action="frps-logs">日志</button><button class="btn secondary small" data-node="${n.id}" data-action="frps-restart" data-method="POST">重启</button></td></tr>`).join('')}</tbody></table></div>`;
 }
 function certificatesPage() {
-  return `<section class="split"><div class="card accent"><h2>域名与证书操作</h2><div class="form"><input class="input" id="domainName" placeholder="用户域名，例如 app.user.com"><input class="input" id="cnameTarget" placeholder="CNAME 目标，例如 frp.example.com"><input class="input" id="leEmail" placeholder="Let's Encrypt 邮箱"><button class="btn secondary" id="checkCnameBtn">检测 CNAME</button><button class="btn secondary" id="renderNginxBtn">生成 HTTPS Nginx 配置</button><button class="btn secondary" id="requestCertBtn">申请证书</button><button class="btn secondary" id="renewDueBtn">续期到期证书</button><button class="btn secondary" id="forceRenewBtn">强制续期全部</button><button class="btn secondary" id="testNginxBtn">测试 Nginx</button><button class="btn secondary" id="reloadNginxBtn">Reload Nginx</button></div></div><div class="card"><h2>证书状态</h2>${certTable()}</div></section>`;
+  return `<section class="split"><div class="card accent"><h2>证书管理</h2><p class="subtitle">证书由用户端提交申请，后台负责全局查看、续期和网关配置管理。</p><div class="form"><input class="input" id="domainName" placeholder="用户域名，例如 app.user.com"><input class="input" id="cnameTarget" placeholder="CNAME 目标，例如 frp.example.com"><button class="btn secondary" id="checkCnameBtn">检测 CNAME</button><button class="btn secondary" id="renderNginxBtn">生成 HTTPS Nginx 配置</button><button class="btn secondary" id="renewDueBtn">续期到期证书</button><button class="btn secondary" id="forceRenewBtn">强制续期全部</button><button class="btn secondary" id="testNginxBtn">测试 Nginx</button><button class="btn secondary" id="reloadNginxBtn">Reload Nginx</button></div></div><div class="card"><h2>全部证书</h2>${certTable()}</div></section>`;
 }
 function certTable() {
   if (!state.certificates.length) return '<div class="empty">暂无证书</div>';
@@ -206,7 +213,7 @@ function certTable() {
 }
 function settingsPage() {
   const s = state.settings || {};
-  return `<section class="split"><div class="card"><h2>系统设置</h2><div class="form"><input class="input" id="apiBase" value="${h(state.apiBase)}" placeholder="后台 API 地址"><input class="input" id="serverAddr" value="${h(s.server_addr || '')}" placeholder="FRP 入口域名"><input class="input" id="purchaseUrl" value="${h(s.purchase_url || '')}" placeholder="购买链接"><button class="btn primary" id="saveSettingsBtn">保存设置</button></div><h2>邮件测试</h2><div class="form"><input class="input" id="testMail" placeholder="测试收件邮箱"><button class="btn secondary" id="testMailBtn">发送测试邮件</button></div></div><div class="card accent"><h2>frps 管理</h2><div class="form"><button class="btn secondary" id="frpsStatusBtn">frps 状态</button><button class="btn secondary" id="frpsConfigBtn">查看 frps 配置</button><button class="btn secondary" id="frpsLogsBtn">查看 frps 日志</button><button class="btn secondary" id="frpsRestartBtn">Restart frps</button><button class="btn secondary" id="frpsReloadBtn">Reload frps</button></div></div></section>`;
+  return `<section class="split"><div class="card"><h2>系统设置</h2><div class="form"><input class="input" id="serverAddr" value="${h(s.server_addr || '')}" placeholder="FRP 入口域名"><input class="input" id="purchaseUrl" value="${h(s.purchase_url || '')}" placeholder="购买链接"><button class="btn primary" id="saveSettingsBtn">保存设置</button></div><h2>邮件测试</h2><div class="form"><input class="input" id="testMail" placeholder="测试收件邮箱"><button class="btn secondary" id="testMailBtn">发送测试邮件</button></div></div><div class="card accent"><h2>frps 管理</h2><div class="form"><button class="btn secondary" id="frpsStatusBtn">frps 状态</button><button class="btn secondary" id="frpsConfigBtn">查看 frps 配置</button><button class="btn secondary" id="frpsLogsBtn">查看 frps 日志</button><button class="btn secondary" id="frpsRestartBtn">Restart frps</button><button class="btn secondary" id="frpsReloadBtn">Reload frps</button></div></div></section>`;
 }
 function logsPage() {
   return `<section class="split"><div class="card"><h2>操作日志</h2>${opsTable()}</div><div class="card"><h2>运行日志</h2><div class="log" id="logBox">${h(state.logLines.join('\n'))}</div></div></section>`;
@@ -224,17 +231,16 @@ function bindPage(path) {
     document.querySelectorAll('[data-node]').forEach(btn => btn.onclick = async () => { try { log(await api(`/api/admin/nodes/${btn.dataset.node}/${btn.dataset.action}`, { method: btn.dataset.method || 'GET' })); } catch (e) { log(e.message); } });
   }
   if (path === '/certificates') {
-    const domainBody = () => ({ domain: $('domainName').value, target: $('cnameTarget').value, email: $('leEmail').value });
+    const domainBody = () => ({ domain: $('domainName').value, target: $('cnameTarget').value });
     $('checkCnameBtn').onclick = async () => { try { log(await api('/api/admin/domains/check-cname', { method: 'POST', body: JSON.stringify(domainBody()) })); } catch (e) { log(e.message); } };
     $('renderNginxBtn').onclick = async () => { try { log(await api('/api/admin/nginx/render-https', { method: 'POST', body: JSON.stringify(domainBody()) })); } catch (e) { log(e.message); } };
-    $('requestCertBtn').onclick = async () => { try { log(await api('/api/admin/certificates/request', { method: 'POST', body: JSON.stringify(domainBody()) })); render(); } catch (e) { log(e.message); } };
     $('renewDueBtn').onclick = async () => { try { log(await api('/api/admin/certificates/renew-due', { method: 'POST', body: JSON.stringify({ force: false }) })); render(); } catch (e) { log(e.message); } };
     $('forceRenewBtn').onclick = async () => { try { log(await api('/api/admin/certificates/renew-due', { method: 'POST', body: JSON.stringify({ force: true }) })); render(); } catch (e) { log(e.message); } };
     $('testNginxBtn').onclick = async () => { try { log(await api('/api/admin/nginx/test', { method: 'POST' })); } catch (e) { log(e.message); } };
     $('reloadNginxBtn').onclick = async () => { try { log(await api('/api/admin/nginx/reload', { method: 'POST' })); } catch (e) { log(e.message); } };
   }
   if (path === '/settings') {
-    $('saveSettingsBtn').onclick = async () => { try { saveApiBase(); const current = state.settings || {}; current.server_addr = $('serverAddr').value; current.frp_entry_domain = $('serverAddr').value; current.purchase_url = $('purchaseUrl').value; log(await api('/api/admin/settings', { method: 'PUT', body: JSON.stringify(current) })); render(); } catch (e) { log(e.message); } };
+    $('saveSettingsBtn').onclick = async () => { try { const current = state.settings || {}; current.server_addr = $('serverAddr').value; current.frp_entry_domain = $('serverAddr').value; current.purchase_url = $('purchaseUrl').value; log(await api('/api/admin/settings', { method: 'PUT', body: JSON.stringify(current) })); render(); } catch (e) { log(e.message); } };
     $('testMailBtn').onclick = async () => { try { log(await api('/api/admin/settings/test-mail', { method: 'POST', body: JSON.stringify({ email: $('testMail').value }) })); } catch (e) { log(e.message); } };
     $('frpsStatusBtn').onclick = async () => { try { log(await api('/api/admin/frps/status')); } catch (e) { log(e.message); } };
     $('frpsConfigBtn').onclick = async () => { try { log(await api('/api/admin/frps/config')); } catch (e) { log(e.message); } };

@@ -13,7 +13,8 @@ const $ = id => document.getElementById(id);
 const app = $('app');
 const state = {
   token: localStorage.getItem('token') || '',
-  apiBase: localStorage.getItem('apiBase') || location.origin,
+  apiBase: location.origin,
+  sidebarCollapsed: localStorage.getItem('userSidebarCollapsed') === 'true',
   me: null,
   subscription: null,
   traffic: null,
@@ -29,7 +30,8 @@ const navItems = [
   ['/app/billing', '套餐与支付', '购买、兑换和续费'],
   ['/app/tunnels', '隧道管理', '创建与查看映射'],
   ['/app/traffic', '流量与日志', '用量上报与操作记录'],
-  ['/app/settings', '账户设置', '登录信息与 API 地址'],
+  ['/app/certificates', '域名证书', '申请 HTTPS 证书'],
+  ['/app/settings', '账户设置', '账号与安全'],
 ];
 
 function h(value) {
@@ -45,16 +47,19 @@ function normalizeRoute(route) {
   if (route.startsWith('/app') && !navItems.some(([r]) => r === route)) return '/app/overview';
   return route;
 }
-function saveApiBaseFrom(id = 'apiBase') {
-  const input = $(id);
-  if (input) state.apiBase = input.value || location.origin;
-  localStorage.setItem('apiBase', state.apiBase);
+function apiOrigin() {
+  state.apiBase = location.origin;
   return state.apiBase.replace(/\/$/, '');
+}
+function toggleUserSidebar() {
+  state.sidebarCollapsed = !state.sidebarCollapsed;
+  localStorage.setItem('userSidebarCollapsed', String(state.sidebarCollapsed));
+  render();
 }
 async function api(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
   if (state.token) headers.Authorization = 'Bearer ' + state.token;
-  const response = await fetch(saveApiBaseFrom() + path, { ...opts, headers });
+  const response = await fetch(apiOrigin() + path, { ...opts, headers });
   const json = await response.json().catch(() => ({ success: false, message: response.statusText }));
   if (!response.ok || json.success === false) throw new Error(json.message || response.statusText);
   return json.data;
@@ -176,7 +181,6 @@ function renderAuth(mode) {
           <p>${isRegister ? '已有账号？' : '还没有账号？'} <a href="#/${isRegister ? 'login' : 'register'}" data-route="/${isRegister ? 'login' : 'register'}">${isRegister ? '去登录' : '立即注册'}</a></p>
         </div>
         <div class="form-stack">
-          <label>API 地址<input class="input" id="apiBase" value="${h(state.apiBase)}" placeholder="默认当前站点"></label>
           <label>邮箱<input class="input" id="email" type="email" autocomplete="email" placeholder="you@example.com"></label>
           <label>密码<input class="input" id="password" type="password" autocomplete="${isRegister ? 'new-password' : 'current-password'}" placeholder="至少 4 位"></label>
           ${isRegister ? `<label>验证码</label><div class="inline-form"><input class="input" id="code" placeholder="邮箱验证码"><button class="btn secondary" id="sendCodeBtn">发送验证码</button></div>` : ''}
@@ -188,7 +192,6 @@ function renderAuth(mode) {
     ${footer()}
   </div>`;
   bindRouteLinks(app);
-  $('apiBase').addEventListener('change', () => saveApiBaseFrom('apiBase'));
   if (isRegister) bindRegisterActions(); else bindLoginActions();
 }
 function writeAuth(message) { const el = $('authLog'); if (el) el.textContent = typeof message === 'string' ? message : JSON.stringify(message, null, 2); }
@@ -260,9 +263,12 @@ async function renderConsole(route) {
 }
 function consoleSkeleton(route, body) {
   const active = navItems.find(([r]) => r === route) || navItems[0];
-  return `<div class="console-shell">
+  return `<div class="console-shell ${state.sidebarCollapsed ? 'is-collapsed' : ''}">
     <aside class="console-side">
-      <a class="brand console-brand" href="#/app/overview" data-route="/app/overview"><span class="logo-mark"></span><span><strong>FRP Panel</strong><small>${h(state.me?.email || 'User console')}</small></span></a>
+      <div class="side-head">
+        <a class="brand console-brand" href="#/app/overview" data-route="/app/overview"><span class="logo-mark"></span><span><strong>FRP Panel</strong><small>${h(state.me?.email || 'User console')}</small></span></a>
+        <button class="side-toggle" id="userSidebarToggle" title="收缩/展开侧栏">${state.sidebarCollapsed ? '›' : '‹'}</button>
+      </div>
       <nav class="console-nav" aria-label="控制台导航">
         ${navItems.map(([r, label, desc]) => `<a class="${r === route ? 'active' : ''}" href="#${r}" data-route="${r}"><b>${label}</b><small>${desc}</small></a>`).join('')}
       </nav>
@@ -278,6 +284,8 @@ function consoleSkeleton(route, body) {
 }
 function bindConsoleActions() {
   bindRouteLinks(app);
+  const toggleBtn = $('userSidebarToggle');
+  if (toggleBtn) toggleBtn.onclick = toggleUserSidebar;
   const refreshBtn = $('refreshBtn');
   if (refreshBtn) refreshBtn.onclick = render;
   const logoutBtn = $('logoutBtn');
@@ -292,6 +300,7 @@ function renderConsolePage(route) {
   if (route === '/app/billing') return renderBillingPage();
   if (route === '/app/tunnels') return renderTunnelsPage();
   if (route === '/app/traffic') return renderTrafficPage();
+  if (route === '/app/certificates') return renderCertificatesPage();
   if (route === '/app/settings') return renderSettingsPage();
   return renderOverviewPage();
 }
@@ -349,10 +358,20 @@ function renderTrafficPage() {
     <section class="page-card"><h2>操作日志</h2><div class="log" id="logBox">${h(state.logLines.join('\n'))}</div></section>
   </div>`;
 }
+function renderCertificatesPage() {
+  return `<div class="two-column wide-left">
+    <section class="page-card accent"><h2>申请 HTTPS 证书</h2><p class="muted">证书由用户端提交申请，后台统一查看和续期管理。申请前请先把域名 CNAME 到平台入口。</p><div class="form-stack">
+      <input class="input" id="certDomain" placeholder="域名，例如 app.example.com">
+      <input class="input" id="certEmail" value="${h(state.me?.email || '')}" placeholder="Let's Encrypt 联系邮箱，可留空使用账号邮箱">
+      <button class="btn primary full" id="requestUserCertBtn">提交证书申请</button>
+    </div><div class="code">提示：HTTP/HTTPS 隧道域名完成解析后，再提交证书申请。</div></section>
+    <section class="page-card"><h2>申请结果</h2><div class="log" id="certLog">等待提交</div></section>
+  </div>`;
+}
 function renderSettingsPage() {
   return `<div class="two-column">
     <section class="page-card"><h2>账户信息</h2><dl class="info-list"><dt>邮箱</dt><dd>${h(state.me?.email || '-')}</dd><dt>套餐</dt><dd>${h(state.subscription?.plan_name || '未开通')}</dd><dt>状态</dt><dd>${h(state.subscription?.status || 'inactive')}</dd></dl></section>
-    <section class="page-card"><h2>连接设置</h2><div class="form-stack"><label>API 地址<input class="input" id="apiBase" value="${h(state.apiBase)}"></label><button class="btn secondary" id="saveApiBaseBtn">保存 API 地址</button><button class="btn danger" id="logoutBtn2">退出当前账号</button></div></section>
+    <section class="page-card"><h2>账号操作</h2><p class="muted">当前账号用于管理套餐、隧道、证书申请和流量记录。</p><div class="form-stack"><button class="btn danger" id="logoutBtn2">退出当前账号</button></div></section>
   </div>`;
 }
 function bindPageActions(route) {
@@ -397,9 +416,20 @@ function bindPageActions(route) {
       } catch (error) { pushLog(error.message); }
     };
   }
+  if (route === '/app/certificates') {
+    const requestBtn = $('requestUserCertBtn');
+    if (requestBtn) requestBtn.onclick = async () => {
+      try {
+        const data = await api('/api/user/certificates/request', { method: 'POST', body: JSON.stringify({ domain: $('certDomain').value, email: $('certEmail').value }) });
+        const el = $('certLog');
+        if (el) el.textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        const el = $('certLog');
+        if (el) el.textContent = error.message;
+      }
+    };
+  }
   if (route === '/app/settings') {
-    const save = $('saveApiBaseBtn');
-    if (save) save.onclick = () => { saveApiBaseFrom('apiBase'); pushLog('API 地址已保存：' + state.apiBase); };
     const logout2 = $('logoutBtn2');
     if (logout2) logout2.onclick = () => { state.token = ''; localStorage.removeItem('token'); navigate('/login'); };
   }
