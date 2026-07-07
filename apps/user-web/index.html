@@ -14,7 +14,7 @@ const app = $('app');
 const state = {
   token: localStorage.getItem('token') || '',
   apiBase: location.origin,
-  sidebarCollapsed: localStorage.getItem('userSidebarCollapsed') === 'true',
+  sidebarCollapsed: localStorage.getItem('userSidebarCollapsedV2') !== 'false',
   me: null,
   subscription: null,
   traffic: null,
@@ -53,7 +53,7 @@ function apiOrigin() {
 }
 function toggleUserSidebar() {
   state.sidebarCollapsed = !state.sidebarCollapsed;
-  localStorage.setItem('userSidebarCollapsed', String(state.sidebarCollapsed));
+  localStorage.setItem('userSidebarCollapsedV2', String(state.sidebarCollapsed));
   render();
 }
 async function api(path, opts = {}) {
@@ -267,7 +267,7 @@ function consoleSkeleton(route, body) {
     <aside class="console-side">
       <div class="side-head">
         <a class="brand console-brand" href="#/app/overview" data-route="/app/overview"><span class="logo-mark"></span><span><strong>FRP Panel</strong><small>${h(state.me?.email || 'User console')}</small></span></a>
-        <button class="side-toggle" id="userSidebarToggle" title="收缩/展开侧栏">${state.sidebarCollapsed ? '›' : '‹'}</button>
+        <button class="side-toggle" id="userSidebarToggle" title="展开/收起侧栏" aria-label="展开/收起侧栏">${state.sidebarCollapsed ? '›' : '‹'}</button>
       </div>
       <nav class="console-nav" aria-label="控制台导航">
         ${navItems.map(([r, label, desc]) => `<a class="${r === route ? 'active' : ''}" href="#${r}" data-route="${r}"><b>${label}</b><small>${desc}</small></a>`).join('')}

@@ -14,7 +14,7 @@ const app = $('adminApp');
 const state = {
   token: localStorage.getItem('adminToken') || '',
   apiBase: location.origin,
-  sidebarCollapsed: localStorage.getItem('adminSidebarCollapsed') === 'true',
+  sidebarCollapsed: localStorage.getItem('adminSidebarCollapsedV2') !== 'false',
   dashboard: null,
   users: [],
   plans: [],
@@ -51,7 +51,7 @@ function apiOrigin() {
 }
 function toggleAdminSidebar() {
   state.sidebarCollapsed = !state.sidebarCollapsed;
-  localStorage.setItem('adminSidebarCollapsed', String(state.sidebarCollapsed));
+  localStorage.setItem('adminSidebarCollapsedV2', String(state.sidebarCollapsed));
   render();
 }
 async function api(path, opts = {}) {
@@ -143,7 +143,7 @@ function shell(path, body) {
     <aside class="side">
       <div class="side-head">
         <a class="brand" href="#/dashboard" data-route="/dashboard"><span class="logo"></span><span><strong>FRP Admin</strong><small>Operation Console</small></span></a>
-        <button class="side-toggle" id="adminSidebarToggle" title="收缩/展开侧栏">${state.sidebarCollapsed ? '›' : '‹'}</button>
+        <button class="side-toggle" id="adminSidebarToggle" title="展开/收起侧栏" aria-label="展开/收起侧栏">${state.sidebarCollapsed ? '›' : '‹'}</button>
       </div>
       <nav class="nav">${adminRoutes.map(item => `<a class="${item.path === path ? 'active' : ''}" href="#${item.path}" data-route="${item.path}"><b>${item.label}</b><small>${item.desc}</small></a>`).join('')}</nav>
     </aside>
