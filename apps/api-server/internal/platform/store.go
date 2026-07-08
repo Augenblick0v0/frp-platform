@@ -702,6 +702,20 @@ func (s *Store) CreatePlan(plan Plan) (Plan, error) {
 	return plan, nil
 }
 
+func (s *Store) UpdatePlan(id int64, plan Plan) (Plan, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.plans[id]; !ok {
+		return Plan{}, ErrNotFound
+	}
+	if plan.Status == "" {
+		plan.Status = "active"
+	}
+	plan.ID = id
+	s.plans[id] = plan
+	return plan, nil
+}
+
 func (s *Store) Users() []User {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -710,6 +724,30 @@ func (s *Store) Users() []User {
 		out = append(out, u)
 	}
 	return out
+}
+
+func (s *Store) UpdateUser(id int64, status string, planID int64) (User, Subscription, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ok := s.users[id]
+	if !ok {
+		return User{}, Subscription{}, ErrNotFound
+	}
+	if strings.TrimSpace(status) != "" {
+		u.Status = strings.TrimSpace(status)
+		s.users[id] = u
+	}
+	var sub Subscription
+	if planID > 0 {
+		p, ok := s.plans[planID]
+		if !ok || p.Status != "active" {
+			return User{}, Subscription{}, ErrNotFound
+		}
+		now := time.Now()
+		sub = Subscription{UserID: id, PlanID: p.ID, PlanName: p.Name, ExpiresAt: now.AddDate(0, 0, p.DurationDays), TrafficLimitBytes: p.TrafficLimitBytes, BandwidthKbps: p.BandwidthKbps, AllowTCP: p.AllowTCP, AllowUDP: p.AllowUDP, AllowHTTP: p.AllowHTTP, AllowHTTPS: p.AllowHTTPS, AllowCustomDomain: p.AllowCustomDomain, AllowAutoCert: p.AllowAutoCert, MaxTunnels: p.MaxTunnels, MaxTCPTunnels: p.MaxTCPTunnels, MaxUDPTunnels: p.MaxUDPTunnels, MaxHTTPTunnels: p.MaxHTTPTunnels, MaxHTTPSTunnels: p.MaxHTTPSTunnels, MaxDomains: p.MaxDomains, Status: "active"}
+		s.subscriptions[id] = sub
+	}
+	return u, sub, nil
 }
 
 func (s *Store) RedeemCodes() []RedeemCode {

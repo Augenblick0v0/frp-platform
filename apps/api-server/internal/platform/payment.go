@@ -13,23 +13,25 @@ import (
 )
 
 type epayConfig struct {
-	BaseURL   string
-	SubmitURL string
-	PID       string
-	Key       string
-	SiteName  string
-	PublicURL string
+	BaseURL        string
+	SubmitURL      string
+	PID            string
+	Key            string
+	SiteName       string
+	PublicURL      string
+	DefaultPayType string
 }
 
 func epayFromEnv() epayConfig {
 	base := strings.TrimRight(getenv("EPAY_API_BASE", "https://pay.flwi.top"), "/")
 	return epayConfig{
-		BaseURL:   base,
-		SubmitURL: strings.TrimRight(getenv("EPAY_SUBMIT_URL", base+"/submit.php"), "/"),
-		PID:       getenv("EPAY_PID", ""),
-		Key:       getenv("EPAY_KEY", ""),
-		SiteName:  getenv("EPAY_SITE_NAME", "FRP Tunnel Platform"),
-		PublicURL: strings.TrimRight(getenv("PUBLIC_BASE_URL", getenv("PANEL_PUBLIC_URL", "http://127.0.0.1:8080")), "/"),
+		BaseURL:        base,
+		SubmitURL:      strings.TrimRight(getenv("EPAY_SUBMIT_URL", base+"/submit.php"), "/"),
+		PID:            getenv("EPAY_PID", ""),
+		Key:            getenv("EPAY_KEY", ""),
+		SiteName:       getenv("EPAY_SITE_NAME", "FRP Tunnel Platform"),
+		PublicURL:      strings.TrimRight(getenv("PUBLIC_BASE_URL", getenv("PANEL_PUBLIC_URL", "http://127.0.0.1:8080")), "/"),
+		DefaultPayType: strings.ToLower(strings.TrimSpace(getenv("EPAY_DEFAULT_PAY_TYPE", "wxpay"))),
 	}
 }
 
@@ -77,10 +79,13 @@ func epayBuildSubmitURL(submitURL string, vals map[string]string) string {
 	return submitURL + "?" + q.Encode()
 }
 
-func newPaymentOrder(userID int64, plan Plan, payType string) PaymentOrder {
+func newPaymentOrder(userID int64, plan Plan, payType string, defaultPayType string) PaymentOrder {
 	payType = strings.ToLower(strings.TrimSpace(payType))
 	if payType == "" {
-		payType = "alipay"
+		payType = strings.ToLower(strings.TrimSpace(defaultPayType))
+	}
+	if payType == "" {
+		payType = "wxpay"
 	}
 	return PaymentOrder{
 		UserID:     userID,
@@ -138,7 +143,7 @@ func (s *Server) createEpayOrder(w http.ResponseWriter, r *http.Request, u User)
 		fail(w, 400, "PLAN_NOT_FOR_SALE", "套餐未设置价格")
 		return
 	}
-	order, err := s.store.CreatePaymentOrder(newPaymentOrder(u.ID, plan, in.PayType))
+	order, err := s.store.CreatePaymentOrder(newPaymentOrder(u.ID, plan, in.PayType, cfg.DefaultPayType))
 	if err != nil {
 		handleErr(w, err)
 		return

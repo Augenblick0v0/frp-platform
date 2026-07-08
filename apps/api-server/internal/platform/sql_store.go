@@ -672,6 +672,22 @@ RETURNING id`, plan.Name, plan.Description, plan.PriceCents, plan.DurationDays, 
 	return plan, err
 }
 
+func (s *SQLStore) UpdatePlan(id int64, plan Plan) (Plan, error) {
+	if plan.Status == "" {
+		plan.Status = "active"
+	}
+	plan.ID = id
+	res, err := s.db.Exec(`UPDATE plans SET name=$1,description=$2,price_cents=$3,duration_days=$4,traffic_limit_bytes=$5,bandwidth_limit_kbps=$6,max_tunnels=$7,max_tcp_tunnels=$8,max_udp_tunnels=$9,max_http_tunnels=$10,max_https_tunnels=$11,allow_tcp=$12,allow_udp=$13,allow_http=$14,allow_https=$15,allow_custom_domain=$16,max_domains=$17,allow_auto_cert=$18,status=$19,updated_at=now() WHERE id=$20`,
+		plan.Name, plan.Description, plan.PriceCents, plan.DurationDays, plan.TrafficLimitBytes, plan.BandwidthKbps, plan.MaxTunnels, plan.MaxTCPTunnels, plan.MaxUDPTunnels, plan.MaxHTTPTunnels, plan.MaxHTTPSTunnels, plan.AllowTCP, plan.AllowUDP, plan.AllowHTTP, plan.AllowHTTPS, plan.AllowCustomDomain, plan.MaxDomains, plan.AllowAutoCert, plan.Status, id)
+	if err != nil {
+		return Plan{}, err
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return Plan{}, ErrNotFound
+	}
+	return plan, nil
+}
+
 func (s *SQLStore) Users() []User {
 	rows, err := s.db.Query(`SELECT id,email,password_hash,status,created_at FROM users ORDER BY id DESC LIMIT 500`)
 	if err != nil {
@@ -685,6 +701,45 @@ func (s *SQLStore) Users() []User {
 		out = append(out, u)
 	}
 	return out
+}
+
+func (s *SQLStore) UpdateUser(id int64, status string, planID int64) (User, Subscription, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return User{}, Subscription{}, err
+	}
+	defer tx.Rollback()
+	if strings.TrimSpace(status) != "" {
+		if _, err := tx.Exec(`UPDATE users SET status=$1, updated_at=now() WHERE id=$2`, strings.TrimSpace(status), id); err != nil {
+			return User{}, Subscription{}, err
+		}
+	}
+	var u User
+	if err := tx.QueryRow(`SELECT id,email,password_hash,status,created_at FROM users WHERE id=$1`, id).Scan(&u.ID, &u.Email, &u.Password, &u.Status, &u.CreatedAt); err != nil {
+		return User{}, Subscription{}, ErrNotFound
+	}
+	var sub Subscription
+	if planID > 0 {
+		row := tx.QueryRow(`SELECT id,name,coalesce(description,''),price_cents,duration_days,traffic_limit_bytes,bandwidth_limit_kbps,max_tunnels,max_tcp_tunnels,max_udp_tunnels,max_http_tunnels,max_https_tunnels,allow_tcp,allow_udp,allow_http,allow_https,allow_custom_domain,max_domains,allow_auto_cert,status FROM plans WHERE id=$1 AND status='active'`, planID)
+		var p Plan
+		if err := row.Scan(&p.ID, &p.Name, &p.Description, &p.PriceCents, &p.DurationDays, &p.TrafficLimitBytes, &p.BandwidthKbps, &p.MaxTunnels, &p.MaxTCPTunnels, &p.MaxUDPTunnels, &p.MaxHTTPTunnels, &p.MaxHTTPSTunnels, &p.AllowTCP, &p.AllowUDP, &p.AllowHTTP, &p.AllowHTTPS, &p.AllowCustomDomain, &p.MaxDomains, &p.AllowAutoCert, &p.Status); err != nil {
+			return User{}, Subscription{}, ErrNotFound
+		}
+		now := time.Now()
+		expires := now.AddDate(0, 0, p.DurationDays)
+		_, _ = tx.Exec(`UPDATE subscriptions SET status='replaced', updated_at=now() WHERE user_id=$1 AND status='active'`, id)
+		if _, err := tx.Exec(`INSERT INTO subscriptions (user_id,plan_id,starts_at,expires_at,traffic_limit_bytes,bandwidth_limit_kbps,status) VALUES ($1,$2,$3,$4,$5,$6,'active')`, id, p.ID, now, expires, p.TrafficLimitBytes, p.BandwidthKbps); err != nil {
+			return User{}, Subscription{}, err
+		}
+		sub = planToSub(id, p, expires)
+	} else {
+		_ = tx.QueryRow(`SELECT p.id,p.name,coalesce(p.description,''),p.price_cents,p.duration_days,sub.traffic_limit_bytes,sub.bandwidth_limit_kbps,p.max_tunnels,p.max_tcp_tunnels,p.max_udp_tunnels,p.max_http_tunnels,p.max_https_tunnels,p.allow_tcp,p.allow_udp,p.allow_http,p.allow_https,p.allow_custom_domain,p.max_domains,p.allow_auto_cert,sub.status,sub.expires_at,sub.traffic_used_bytes FROM subscriptions sub JOIN plans p ON p.id=sub.plan_id WHERE sub.user_id=$1 AND sub.status='active' ORDER BY sub.expires_at DESC LIMIT 1`, id).Scan(&sub.PlanID, &sub.PlanName, new(string), new(int64), new(int), &sub.TrafficLimitBytes, &sub.BandwidthKbps, &sub.MaxTunnels, &sub.MaxTCPTunnels, &sub.MaxUDPTunnels, &sub.MaxHTTPTunnels, &sub.MaxHTTPSTunnels, &sub.AllowTCP, &sub.AllowUDP, &sub.AllowHTTP, &sub.AllowHTTPS, &sub.AllowCustomDomain, &sub.MaxDomains, &sub.AllowAutoCert, &sub.Status, &sub.ExpiresAt, &sub.TrafficUsedBytes)
+		sub.UserID = id
+	}
+	if err := tx.Commit(); err != nil {
+		return User{}, Subscription{}, err
+	}
+	return u, sub, nil
 }
 
 func (s *SQLStore) RedeemCodes() []RedeemCode {

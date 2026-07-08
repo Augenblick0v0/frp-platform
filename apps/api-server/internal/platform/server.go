@@ -66,12 +66,15 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/admin/me", s.adminAuth(s.adminMe))
 	s.mux.HandleFunc("/api/admin/dashboard", s.adminAuth(s.adminDashboard))
 	s.mux.HandleFunc("/api/admin/plans", s.adminAuth(s.adminPlans))
+	s.mux.HandleFunc("/api/admin/plans/", s.adminAuth(s.adminPlanAction))
 	s.mux.HandleFunc("/api/admin/users", s.adminAuth(s.adminUsers))
+	s.mux.HandleFunc("/api/admin/users/", s.adminAuth(s.adminUserAction))
 	s.mux.HandleFunc("/api/admin/redeem-codes", s.adminAuth(s.adminRedeemCodes))
 	s.mux.HandleFunc("/api/admin/tunnels", s.adminAuth(s.adminTunnels))
 	s.mux.HandleFunc("/api/admin/nodes", s.adminAuth(s.adminNodes))
 	s.mux.HandleFunc("/api/admin/nodes/", s.adminAuth(s.adminNodeAction))
 	s.mux.HandleFunc("/api/admin/settings", s.adminAuth(s.adminSettings))
+	s.mux.HandleFunc("/api/admin/payment-config", s.adminAuth(s.adminPaymentConfig))
 	s.mux.HandleFunc("/api/admin/settings/test-mail", s.adminAuth(s.adminTestMail))
 	s.mux.HandleFunc("/api/admin/domains/check-cname", s.adminAuth(s.adminCheckCNAME))
 	s.mux.HandleFunc("/api/admin/nginx/render-https", s.adminAuth(s.adminRenderHTTPSNginx))
@@ -440,7 +443,76 @@ func (s *Server) adminPlans(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(405)
 	}
 }
+
+func (s *Server) adminPlanAction(w http.ResponseWriter, r *http.Request) {
+	rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/admin/plans/"), "/")
+	id, err := strconv.ParseInt(rest, 10, 64)
+	if rest == "" || err != nil || id <= 0 {
+		fail(w, 404, "PLAN_NOT_FOUND", "plan not found")
+		return
+	}
+	switch r.Method {
+	case http.MethodPut:
+		var in Plan
+		if !decode(w, r, &in) {
+			return
+		}
+		plan, err := s.store.UpdatePlan(id, in)
+		if err != nil {
+			handleErr(w, err)
+			return
+		}
+		s.recordAdminOperation(r, "plan.update", fmt.Sprintf("plan:%d", plan.ID), plan.Name)
+		ok(w, plan)
+	default:
+		w.WriteHeader(405)
+	}
+}
+
+func (s *Server) adminPaymentConfig(w http.ResponseWriter, r *http.Request) {
+	cfg := epayFromEnv()
+	ok(w, map[string]any{
+		"provider":         "epay",
+		"enabled":          cfg.enabled(),
+		"pid_set":          cfg.PID != "",
+		"key_set":          cfg.Key != "",
+		"api_base":         cfg.BaseURL,
+		"submit_url":       cfg.SubmitURL,
+		"site_name":        cfg.SiteName,
+		"public_url":       cfg.PublicURL,
+		"default_pay_type": cfg.DefaultPayType,
+		"configured_by":    "environment",
+	})
+}
 func (s *Server) adminUsers(w http.ResponseWriter, r *http.Request) { ok(w, s.store.Users()) }
+
+func (s *Server) adminUserAction(w http.ResponseWriter, r *http.Request) {
+	idText := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/admin/users/"), "/")
+	id, err := strconv.ParseInt(idText, 10, 64)
+	if idText == "" || err != nil || id <= 0 {
+		fail(w, 404, "USER_NOT_FOUND", "user not found")
+		return
+	}
+	if r.Method != http.MethodPut {
+		w.WriteHeader(405)
+		return
+	}
+	var in struct {
+		Status string `json:"status"`
+		PlanID int64  `json:"plan_id"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	user, sub, err := s.store.UpdateUser(id, in.Status, in.PlanID)
+	if err != nil {
+		handleErr(w, err)
+		return
+	}
+	detail := fmt.Sprintf("status=%s plan_id=%d", in.Status, in.PlanID)
+	s.recordAdminOperation(r, "user.update", user.Email, detail)
+	ok(w, map[string]any{"user": user, "subscription": sub})
+}
 func (s *Server) adminRedeemCodes(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:

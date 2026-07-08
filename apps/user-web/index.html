@@ -320,7 +320,7 @@ function renderOverviewPage() {
 }
 function renderBillingPage() {
   return `<div class="two-column wide-left">
-    <section class="page-card"><h2>购买套餐</h2><p class="muted">选择套餐后跳转易支付收银台，支付成功由通知接口自动开通。</p>${plansTable()}</section>
+    <section class="page-card"><h2>购买套餐</h2><p class="muted">选择套餐和支付方式后跳转易支付收银台，支付成功由通知接口自动开通。</p><label class="field"><span>支付方式</span><select class="input" id="payType"><option value="wxpay" selected>微信支付</option><option value="alipay">支付宝</option></select></label>${plansTable()}</section>
     <section class="page-card"><h2>兑换套餐</h2><p class="muted">已有兑换码可直接激活。</p><div class="form-stack"><label class="field"><span>兑换码</span><input class="input" id="redeemCode" placeholder="请输入套餐兑换码"></label><button class="btn primary" id="redeemBtn">兑换</button></div><div class="mini-log compact" id="billingLog">等待操作</div></section>
   </div>`;
 }
@@ -380,7 +380,7 @@ function bindPageActions(route) {
     document.querySelectorAll('[data-buy-plan]').forEach(button => {
       button.onclick = async () => {
         try {
-          const order = await api('/api/payments/epay/orders', { method: 'POST', body: JSON.stringify({ plan_id: Number(button.dataset.buyPlan), pay_type: 'alipay' }) });
+          const order = await api('/api/payments/epay/orders', { method: 'POST', body: JSON.stringify({ plan_id: Number(button.dataset.buyPlan), pay_type: ($('payType')?.value || 'wxpay') }) });
           pushLog('订单已创建：' + order.out_trade_no);
           location.href = order.pay_url;
         } catch (error) { const el = $('billingLog'); if (el) el.textContent = error.message; }
