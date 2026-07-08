@@ -9,7 +9,12 @@ type Backend interface {
 	UserByToken(token string) (User, error)
 	Plans() []Plan
 	CreatePlan(plan Plan) (Plan, error)
+	UpdatePlan(id int64, plan Plan) (Plan, error)
+	CreatePaymentOrder(order PaymentOrder) (PaymentOrder, error)
+	PaymentOrderByOutTradeNo(outTradeNo string) (PaymentOrder, error)
+	MarkPaymentOrderPaid(outTradeNo, providerTradeNo string) (PaymentOrder, Subscription, error)
 	Users() []User
+	UpdateUser(id int64, status string, planID int64) (User, Subscription, error)
 	RedeemCodes() []RedeemCode
 	CreateRedeemCodes(planID int64, count int, prefix string) ([]RedeemCode, error)
 	Redeem(userID int64, code string) (Subscription, error)
@@ -24,6 +29,7 @@ type Backend interface {
 	Nodes() []Node
 	Node(id int64) (Node, error)
 	CreateNode(node Node) (Node, error)
+	DeleteNode(id int64) error
 	BindNode(req NodeBindRequest) (Node, error)
 	UpdateNodeStatus(id int64, status string, lastError string) (Node, error)
 	ReportTraffic(userID int64, reports []TrafficReport) (TrafficSummary, error)

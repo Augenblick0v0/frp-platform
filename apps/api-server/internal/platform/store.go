@@ -23,6 +23,7 @@ type Store struct {
 	adminSessions   map[string]int64
 	emailCodes      map[string]string
 	plans           map[int64]Plan
+	paymentOrders   map[string]PaymentOrder
 	redeemCodes     map[string]RedeemCode
 	subscriptions   map[int64]Subscription
 	tunnels         map[int64]Tunnel
@@ -32,6 +33,7 @@ type Store struct {
 	nextUserID      int64
 	nextAdminID     int64
 	nextPlanID      int64
+	nextPaymentID   int64
 	nextTunnelID    int64
 	settings        Settings
 	todayTraffic    int64
@@ -47,11 +49,11 @@ type Store struct {
 func NewStore() *Store {
 	s := &Store{
 		users: map[int64]User{}, usersByEmail: map[string]int64{}, admins: map[int64]AdminUser{}, adminsByEmail: map[string]int64{}, sessions: map[string]int64{}, adminSessions: map[string]int64{}, emailCodes: map[string]string{},
-		plans: map[int64]Plan{}, redeemCodes: map[string]RedeemCode{}, subscriptions: map[int64]Subscription{}, tunnels: map[int64]Tunnel{}, domains: map[string]int64{}, certificates: map[string]CertificateRecord{}, nodes: map[int64]Node{}, nodesByBind: map[string]int64{},
-		usedTCP: map[int]bool{}, usedUDP: map[int]bool{}, nextUserID: 1, nextAdminID: 1, nextPlanID: 1, nextTunnelID: 1, nextNodeID: 1, nextCertID: 1, nextOperationID: 1,
+		plans: map[int64]Plan{}, paymentOrders: map[string]PaymentOrder{}, redeemCodes: map[string]RedeemCode{}, subscriptions: map[int64]Subscription{}, tunnels: map[int64]Tunnel{}, domains: map[string]int64{}, certificates: map[string]CertificateRecord{}, nodes: map[int64]Node{}, nodesByBind: map[string]int64{},
+		usedTCP: map[int]bool{}, usedUDP: map[int]bool{}, nextUserID: 1, nextAdminID: 1, nextPlanID: 1, nextPaymentID: 1, nextTunnelID: 1, nextNodeID: 1, nextCertID: 1, nextOperationID: 1,
 		settings: Settings{PlatformDomain: "example.com", FRPEntryDomain: "frp.example.com", ServerAddr: "frp.example.com", FRPServerPort: 7000, TCPPortStart: 20000, TCPPortEnd: 29999, UDPPortStart: 30000, UDPPortEnd: 39999, PurchaseURL: "https://example.com/buy"},
 	}
-	plan := Plan{ID: s.nextPlanID, Name: "高级套餐", Description: "支持 TCP/UDP/HTTP/HTTPS、自定义域名和自动证书", DurationDays: 30, TrafficLimitBytes: 100 * 1024 * 1024 * 1024, BandwidthKbps: 10240, MaxTunnels: 20, MaxTCPTunnels: 10, MaxUDPTunnels: 10, MaxHTTPTunnels: 10, MaxHTTPSTunnels: 10, AllowTCP: true, AllowUDP: true, AllowHTTP: true, AllowHTTPS: true, AllowCustomDomain: true, MaxDomains: 10, AllowAutoCert: true, Status: "active"}
+	plan := Plan{ID: s.nextPlanID, Name: "高级套餐", Description: "支持 TCP/UDP/HTTP/HTTPS、自定义域名和自动证书", PriceCents: 990, DurationDays: 30, TrafficLimitBytes: 100 * 1024 * 1024 * 1024, BandwidthKbps: 10240, MaxTunnels: 20, MaxTCPTunnels: 10, MaxUDPTunnels: 10, MaxHTTPTunnels: 10, MaxHTTPSTunnels: 10, AllowTCP: true, AllowUDP: true, AllowHTTP: true, AllowHTTPS: true, AllowCustomDomain: true, MaxDomains: 10, AllowAutoCert: true, Status: "active"}
 	s.plans[plan.ID] = plan
 	s.nextPlanID++
 	s.redeemCodes["DEMO-PLAN-2026"] = RedeemCode{Code: "DEMO-PLAN-2026", PlanID: plan.ID, Status: "unused"}
@@ -158,6 +160,74 @@ func (s *Store) Plans() []Plan {
 		out = append(out, p)
 	}
 	return out
+}
+
+func (s *Store) CreatePaymentOrder(order PaymentOrder) (PaymentOrder, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.users[order.UserID]; !ok {
+		return PaymentOrder{}, ErrNotFound
+	}
+	if _, ok := s.plans[order.PlanID]; !ok {
+		return PaymentOrder{}, ErrNotFound
+	}
+	if strings.TrimSpace(order.OutTradeNo) == "" {
+		return PaymentOrder{}, fmt.Errorf("out_trade_no required")
+	}
+	if _, exists := s.paymentOrders[order.OutTradeNo]; exists {
+		return PaymentOrder{}, ErrConflict
+	}
+	order.ID = s.nextPaymentID
+	s.nextPaymentID++
+	if order.Status == "" {
+		order.Status = "pending"
+	}
+	if order.Provider == "" {
+		order.Provider = "epay"
+	}
+	if order.CreatedAt.IsZero() {
+		order.CreatedAt = time.Now()
+	}
+	s.paymentOrders[order.OutTradeNo] = order
+	return order, nil
+}
+
+func (s *Store) PaymentOrderByOutTradeNo(outTradeNo string) (PaymentOrder, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	order, ok := s.paymentOrders[strings.TrimSpace(outTradeNo)]
+	if !ok {
+		return PaymentOrder{}, ErrNotFound
+	}
+	return order, nil
+}
+
+func (s *Store) MarkPaymentOrderPaid(outTradeNo, providerTradeNo string) (PaymentOrder, Subscription, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	order, ok := s.paymentOrders[strings.TrimSpace(outTradeNo)]
+	if !ok {
+		return PaymentOrder{}, Subscription{}, ErrNotFound
+	}
+	p, ok := s.plans[order.PlanID]
+	if !ok || p.Status != "active" {
+		return PaymentOrder{}, Subscription{}, ErrNotFound
+	}
+	if order.Status == "paid" {
+		sub, ok := s.subscriptions[order.UserID]
+		if !ok {
+			return order, Subscription{}, ErrNotFound
+		}
+		return order, sub, nil
+	}
+	now := time.Now()
+	order.Status = "paid"
+	order.ProviderTradeNo = strings.TrimSpace(providerTradeNo)
+	order.PaidAt = &now
+	s.paymentOrders[order.OutTradeNo] = order
+	sub := Subscription{UserID: order.UserID, PlanID: p.ID, PlanName: p.Name, ExpiresAt: now.AddDate(0, 0, p.DurationDays), TrafficLimitBytes: p.TrafficLimitBytes, BandwidthKbps: p.BandwidthKbps, AllowTCP: p.AllowTCP, AllowUDP: p.AllowUDP, AllowHTTP: p.AllowHTTP, AllowHTTPS: p.AllowHTTPS, AllowCustomDomain: p.AllowCustomDomain, AllowAutoCert: p.AllowAutoCert, MaxTunnels: p.MaxTunnels, MaxTCPTunnels: p.MaxTCPTunnels, MaxUDPTunnels: p.MaxUDPTunnels, MaxHTTPTunnels: p.MaxHTTPTunnels, MaxHTTPSTunnels: p.MaxHTTPSTunnels, MaxDomains: p.MaxDomains, Status: "active"}
+	s.subscriptions[order.UserID] = sub
+	return order, sub, nil
 }
 
 func (s *Store) Redeem(userID int64, code string) (Subscription, error) {
@@ -536,6 +606,18 @@ func (s *Store) CreateNode(node Node) (Node, error) {
 	return node, nil
 }
 
+func (s *Store) DeleteNode(id int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n, ok := s.nodes[id]
+	if !ok {
+		return ErrNotFound
+	}
+	delete(s.nodesByBind, n.BindToken)
+	delete(s.nodes, id)
+	return nil
+}
+
 func (s *Store) BindNode(req NodeBindRequest) (Node, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -620,6 +702,20 @@ func (s *Store) CreatePlan(plan Plan) (Plan, error) {
 	return plan, nil
 }
 
+func (s *Store) UpdatePlan(id int64, plan Plan) (Plan, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.plans[id]; !ok {
+		return Plan{}, ErrNotFound
+	}
+	if plan.Status == "" {
+		plan.Status = "active"
+	}
+	plan.ID = id
+	s.plans[id] = plan
+	return plan, nil
+}
+
 func (s *Store) Users() []User {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -628,6 +724,30 @@ func (s *Store) Users() []User {
 		out = append(out, u)
 	}
 	return out
+}
+
+func (s *Store) UpdateUser(id int64, status string, planID int64) (User, Subscription, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ok := s.users[id]
+	if !ok {
+		return User{}, Subscription{}, ErrNotFound
+	}
+	if strings.TrimSpace(status) != "" {
+		u.Status = strings.TrimSpace(status)
+		s.users[id] = u
+	}
+	var sub Subscription
+	if planID > 0 {
+		p, ok := s.plans[planID]
+		if !ok || p.Status != "active" {
+			return User{}, Subscription{}, ErrNotFound
+		}
+		now := time.Now()
+		sub = Subscription{UserID: id, PlanID: p.ID, PlanName: p.Name, ExpiresAt: now.AddDate(0, 0, p.DurationDays), TrafficLimitBytes: p.TrafficLimitBytes, BandwidthKbps: p.BandwidthKbps, AllowTCP: p.AllowTCP, AllowUDP: p.AllowUDP, AllowHTTP: p.AllowHTTP, AllowHTTPS: p.AllowHTTPS, AllowCustomDomain: p.AllowCustomDomain, AllowAutoCert: p.AllowAutoCert, MaxTunnels: p.MaxTunnels, MaxTCPTunnels: p.MaxTCPTunnels, MaxUDPTunnels: p.MaxUDPTunnels, MaxHTTPTunnels: p.MaxHTTPTunnels, MaxHTTPSTunnels: p.MaxHTTPSTunnels, MaxDomains: p.MaxDomains, Status: "active"}
+		s.subscriptions[id] = sub
+	}
+	return u, sub, nil
 }
 
 func (s *Store) RedeemCodes() []RedeemCode {

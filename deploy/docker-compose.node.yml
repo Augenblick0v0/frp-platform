@@ -21,9 +21,9 @@ services:
     container_name: frp-node-frps
     command: ["-c", "/etc/frp/frps.toml"]
     ports:
-      - "7000:7000"
-      - "20000-29999:20000-29999/tcp"
-      - "30000-39999:30000-39999/udp"
+      - "${FRP_BIND_PORT:-7000}:${FRP_BIND_PORT:-7000}"
+      - "${TCP_PORT_START:-20000}-${TCP_PORT_END:-29999}:${TCP_PORT_START:-20000}-${TCP_PORT_END:-29999}/tcp"
+      - "${UDP_PORT_START:-30000}-${UDP_PORT_END:-39999}:${UDP_PORT_START:-30000}-${UDP_PORT_END:-39999}/udp"
     volumes:
       - ./frps/frps.toml:/etc/frp/frps.toml:ro
       - ./logs/frps:/var/log/frp

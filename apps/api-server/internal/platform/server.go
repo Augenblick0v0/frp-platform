@@ -47,12 +47,17 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/auth/login", s.login)
 	s.mux.HandleFunc("/api/auth/me", s.auth(s.me))
 	s.mux.HandleFunc("/api/user/subscription", s.auth(s.subscription))
+	s.mux.HandleFunc("/api/user/plans", s.auth(s.paymentPlans))
 	s.mux.HandleFunc("/api/user/redeem", s.auth(s.redeem))
 	s.mux.HandleFunc("/api/user/purchase-info", s.auth(s.purchaseInfo))
 	s.mux.HandleFunc("/api/user/traffic", s.auth(s.userTraffic))
+	s.mux.HandleFunc("/api/user/certificates/request", s.auth(s.userRequestCertificate))
 	s.mux.HandleFunc("/api/tunnels", s.auth(s.tunnels))
 	s.mux.HandleFunc("/api/speed-tests/tunnels", s.auth(s.createSpeedTestTunnel))
 	s.mux.HandleFunc("/api/speed-tests/", s.auth(s.finishSpeedTestTunnel))
+	s.mux.HandleFunc("/api/payments/epay/orders", s.auth(s.createEpayOrder))
+	s.mux.HandleFunc("/api/payments/epay/notify", s.epayNotify)
+	s.mux.HandleFunc("/api/payments/epay/return", s.epayReturn)
 	s.mux.HandleFunc("/api/client/heartbeat", s.auth(s.clientHeartbeat))
 	s.mux.HandleFunc("/api/client/tunnels", s.auth(s.clientTunnels))
 	s.mux.HandleFunc("/api/client/traffic", s.auth(s.clientTraffic))
@@ -61,12 +66,15 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/admin/me", s.adminAuth(s.adminMe))
 	s.mux.HandleFunc("/api/admin/dashboard", s.adminAuth(s.adminDashboard))
 	s.mux.HandleFunc("/api/admin/plans", s.adminAuth(s.adminPlans))
+	s.mux.HandleFunc("/api/admin/plans/", s.adminAuth(s.adminPlanAction))
 	s.mux.HandleFunc("/api/admin/users", s.adminAuth(s.adminUsers))
+	s.mux.HandleFunc("/api/admin/users/", s.adminAuth(s.adminUserAction))
 	s.mux.HandleFunc("/api/admin/redeem-codes", s.adminAuth(s.adminRedeemCodes))
 	s.mux.HandleFunc("/api/admin/tunnels", s.adminAuth(s.adminTunnels))
 	s.mux.HandleFunc("/api/admin/nodes", s.adminAuth(s.adminNodes))
 	s.mux.HandleFunc("/api/admin/nodes/", s.adminAuth(s.adminNodeAction))
 	s.mux.HandleFunc("/api/admin/settings", s.adminAuth(s.adminSettings))
+	s.mux.HandleFunc("/api/admin/payment-config", s.adminAuth(s.adminPaymentConfig))
 	s.mux.HandleFunc("/api/admin/settings/test-mail", s.adminAuth(s.adminTestMail))
 	s.mux.HandleFunc("/api/admin/domains/check-cname", s.adminAuth(s.adminCheckCNAME))
 	s.mux.HandleFunc("/api/admin/nginx/render-https", s.adminAuth(s.adminRenderHTTPSNginx))
@@ -225,6 +233,10 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request, u User) { ok(w, u) }
 func (s *Server) subscription(w http.ResponseWriter, r *http.Request, u User) {
 	sub, err := s.store.Subscription(u.ID)
 	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			ok(w, Subscription{UserID: u.ID, PlanName: "未开通", Status: "inactive"})
+			return
+		}
 		handleErr(w, err)
 		return
 	}
@@ -251,15 +263,62 @@ func (s *Server) purchaseInfo(w http.ResponseWriter, r *http.Request, u User) {
 func (s *Server) userTraffic(w http.ResponseWriter, r *http.Request, u User) {
 	summary, err := s.store.TrafficSummary(u.ID)
 	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			ok(w, TrafficSummary{UserID: u.ID})
+			return
+		}
 		handleErr(w, err)
 		return
 	}
 	ok(w, summary)
 }
+func (s *Server) userRequestCertificate(w http.ResponseWriter, r *http.Request, u User) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(405)
+		return
+	}
+	var in struct {
+		Domain string `json:"domain"`
+		Email  string `json:"email"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	if strings.TrimSpace(in.Email) == "" {
+		in.Email = u.Email
+	}
+	res, err := s.automation.RequestCertificate(r.Context(), in.Domain, in.Email)
+	status := "issued"
+	errorMessage := ""
+	if res.DryRun {
+		status = "dry_run"
+	}
+	if err != nil {
+		status = "failed"
+		errorMessage = err.Error()
+	}
+	certPath, keyPath := s.automation.CertificatePaths(in.Domain)
+	issuedAt, expiresAt := s.automation.InspectCertificate(in.Domain)
+	record, saveErr := s.store.SaveCertificate(CertificateRecord{Domain: in.Domain, Status: status, IssuedAt: issuedAt, ExpiresAt: expiresAt, CertPath: certPath, KeyPath: keyPath, LastCommand: res.Command, LastOutput: res.Output, ErrorMessage: errorMessage})
+	if saveErr != nil {
+		fail(w, 500, "CERTIFICATE_SAVE_FAILED", saveErr.Error())
+		return
+	}
+	if err != nil {
+		fail(w, 500, "CERTIFICATE_REQUEST_FAILED", err.Error()+"\n"+res.Output)
+		return
+	}
+	ok(w, map[string]any{"result": res, "record": record})
+}
+
 func (s *Server) tunnels(w http.ResponseWriter, r *http.Request, u User) {
 	switch r.Method {
 	case http.MethodGet:
-		ok(w, s.store.Tunnels(u.ID))
+		tunnels := s.store.Tunnels(u.ID)
+		if tunnels == nil {
+			tunnels = []Tunnel{}
+		}
+		ok(w, tunnels)
 	case http.MethodPost:
 		var in Tunnel
 		if !decode(w, r, &in) {
@@ -384,7 +443,76 @@ func (s *Server) adminPlans(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(405)
 	}
 }
+
+func (s *Server) adminPlanAction(w http.ResponseWriter, r *http.Request) {
+	rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/admin/plans/"), "/")
+	id, err := strconv.ParseInt(rest, 10, 64)
+	if rest == "" || err != nil || id <= 0 {
+		fail(w, 404, "PLAN_NOT_FOUND", "plan not found")
+		return
+	}
+	switch r.Method {
+	case http.MethodPut:
+		var in Plan
+		if !decode(w, r, &in) {
+			return
+		}
+		plan, err := s.store.UpdatePlan(id, in)
+		if err != nil {
+			handleErr(w, err)
+			return
+		}
+		s.recordAdminOperation(r, "plan.update", fmt.Sprintf("plan:%d", plan.ID), plan.Name)
+		ok(w, plan)
+	default:
+		w.WriteHeader(405)
+	}
+}
+
+func (s *Server) adminPaymentConfig(w http.ResponseWriter, r *http.Request) {
+	cfg := epayFromEnv()
+	ok(w, map[string]any{
+		"provider":         "epay",
+		"enabled":          cfg.enabled(),
+		"pid_set":          cfg.PID != "",
+		"key_set":          cfg.Key != "",
+		"api_base":         cfg.BaseURL,
+		"submit_url":       cfg.SubmitURL,
+		"site_name":        cfg.SiteName,
+		"public_url":       cfg.PublicURL,
+		"default_pay_type": cfg.DefaultPayType,
+		"configured_by":    "environment",
+	})
+}
 func (s *Server) adminUsers(w http.ResponseWriter, r *http.Request) { ok(w, s.store.Users()) }
+
+func (s *Server) adminUserAction(w http.ResponseWriter, r *http.Request) {
+	idText := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/admin/users/"), "/")
+	id, err := strconv.ParseInt(idText, 10, 64)
+	if idText == "" || err != nil || id <= 0 {
+		fail(w, 404, "USER_NOT_FOUND", "user not found")
+		return
+	}
+	if r.Method != http.MethodPut {
+		w.WriteHeader(405)
+		return
+	}
+	var in struct {
+		Status string `json:"status"`
+		PlanID int64  `json:"plan_id"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	user, sub, err := s.store.UpdateUser(id, in.Status, in.PlanID)
+	if err != nil {
+		handleErr(w, err)
+		return
+	}
+	detail := fmt.Sprintf("status=%s plan_id=%d", in.Status, in.PlanID)
+	s.recordAdminOperation(r, "user.update", user.Email, detail)
+	ok(w, map[string]any{"user": user, "subscription": sub})
+}
 func (s *Server) adminRedeemCodes(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -476,6 +604,19 @@ func (s *Server) adminNodeAction(w http.ResponseWriter, r *http.Request) {
 	}
 	if action == "" {
 		ok(w, node)
+		return
+	}
+	if action == "delete" {
+		if r.Method != http.MethodDelete && r.Method != http.MethodPost {
+			w.WriteHeader(405)
+			return
+		}
+		if err := s.store.DeleteNode(node.ID); err != nil {
+			handleErr(w, err)
+			return
+		}
+		s.recordAdminOperation(r, "node.delete", node.Name, node.AgentURL)
+		ok(w, map[string]any{"deleted": true, "id": node.ID})
 		return
 	}
 	client := NewNodeAgentClient(node.AgentURL, node.AgentToken)

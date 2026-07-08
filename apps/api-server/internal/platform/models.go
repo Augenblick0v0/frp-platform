@@ -14,6 +14,7 @@ type Plan struct {
 	ID                int64  `json:"id"`
 	Name              string `json:"name"`
 	Description       string `json:"description"`
+	PriceCents        int64  `json:"price_cents"`
 	DurationDays      int    `json:"duration_days"`
 	TrafficLimitBytes int64  `json:"traffic_limit_bytes"`
 	BandwidthKbps     int    `json:"bandwidth_limit_kbps"`
@@ -62,6 +63,22 @@ type RedeemCode struct {
 	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
 	RedeemedBy int64      `json:"redeemed_by_user_id,omitempty"`
 	RedeemedAt *time.Time `json:"redeemed_at,omitempty"`
+}
+
+type PaymentOrder struct {
+	ID              int64      `json:"id"`
+	UserID          int64      `json:"user_id"`
+	PlanID          int64      `json:"plan_id"`
+	Provider        string     `json:"provider"`
+	OutTradeNo      string     `json:"out_trade_no"`
+	ProviderTradeNo string     `json:"provider_trade_no,omitempty"`
+	PayType         string     `json:"pay_type"`
+	Name            string     `json:"name"`
+	Money           string     `json:"money"`
+	Status          string     `json:"status"`
+	PayURL          string     `json:"pay_url,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	PaidAt          *time.Time `json:"paid_at,omitempty"`
 }
 
 type Tunnel struct {
