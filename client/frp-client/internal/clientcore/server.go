@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -22,6 +24,7 @@ func (s *LocalServer) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, map[string]any{"status": "ok"}) })
 	mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, s.manager.Status()) })
+	mux.HandleFunc("/api/local-token", s.localToken)
 	mux.HandleFunc("/api/logs", func(w http.ResponseWriter, r *http.Request) {
 		logs, err := s.manager.Logs(32768)
 		if err != nil {
@@ -30,12 +33,12 @@ func (s *LocalServer) Handler() http.Handler {
 		}
 		writeJSON(w, map[string]any{"logs": logs})
 	})
-	mux.HandleFunc("/api/config/render", s.renderConfig)
-	mux.HandleFunc("/api/config/sync", s.syncConfig)
-	mux.HandleFunc("/api/speed-tests/prepare", s.prepareSpeedTest)
-	mux.HandleFunc("/api/speed-tests/cleanup", s.cleanupSpeedTest)
-	mux.HandleFunc("/api/speed-tests/run", s.runSpeedTest)
-	mux.HandleFunc("/api/frpc/restart", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/config/render", s.requireLocalToken(s.renderConfig))
+	mux.HandleFunc("/api/config/sync", s.requireLocalToken(s.syncConfig))
+	mux.HandleFunc("/api/speed-tests/prepare", s.requireLocalToken(s.prepareSpeedTest))
+	mux.HandleFunc("/api/speed-tests/cleanup", s.requireLocalToken(s.cleanupSpeedTest))
+	mux.HandleFunc("/api/speed-tests/run", s.requireLocalToken(s.runSpeedTest))
+	mux.HandleFunc("/api/frpc/restart", s.requireLocalToken(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(405)
 			return
@@ -45,8 +48,8 @@ func (s *LocalServer) Handler() http.Handler {
 			return
 		}
 		writeJSON(w, s.manager.Status())
-	})
-	mux.HandleFunc("/api/frpc/start", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.HandleFunc("/api/frpc/start", s.requireLocalToken(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(405)
 			return
@@ -56,9 +59,9 @@ func (s *LocalServer) Handler() http.Handler {
 			return
 		}
 		writeJSON(w, s.manager.Status())
-	})
-	mux.HandleFunc("/api/traffic/report", s.reportTraffic)
-	mux.HandleFunc("/api/frpc/stop", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.HandleFunc("/api/traffic/report", s.requireLocalToken(s.reportTraffic))
+	mux.HandleFunc("/api/frpc/stop", s.requireLocalToken(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(405)
 			return
@@ -68,9 +71,45 @@ func (s *LocalServer) Handler() http.Handler {
 			return
 		}
 		writeJSON(w, s.manager.Status())
-	})
+	}))
 	mux.Handle("/", http.FileServer(http.Dir(s.webDir)))
 	return localCORS(mux)
+}
+
+func (s *LocalServer) localToken(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(405)
+		return
+	}
+	if !sameOriginLocalRequest(r) {
+		writeError(w, http.StatusForbidden, fmt.Errorf("local token is only available to the local web ui"))
+		return
+	}
+	token, err := s.manager.LocalAPIToken()
+	if err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	writeJSON(w, map[string]string{"token": token})
+}
+
+func (s *LocalServer) requireLocalToken(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions {
+			next(w, r)
+			return
+		}
+		want, err := s.manager.LocalAPIToken()
+		if err != nil {
+			writeError(w, 500, err)
+			return
+		}
+		if r.Header.Get("X-Local-Token") != want {
+			writeError(w, http.StatusUnauthorized, fmt.Errorf("invalid local api token"))
+			return
+		}
+		next(w, r)
+	}
 }
 
 func (s *LocalServer) prepareSpeedTest(w http.ResponseWriter, r *http.Request) {
@@ -219,8 +258,14 @@ func (s *LocalServer) syncConfig(w http.ResponseWriter, r *http.Request) {
 
 func localCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		origin := r.Header.Get("Origin")
+		if origin == "" || isAllowedLocalOrigin(origin) || origin == os.Getenv("USER_PORTAL_ORIGIN") {
+			if origin != "" {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Vary", "Origin")
+			}
+		}
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Local-Token")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(204)
@@ -228,6 +273,27 @@ func localCORS(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func sameOriginLocalRequest(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	return (u.Host == r.Host) && (u.Hostname() == "127.0.0.1" || u.Hostname() == "localhost" || u.Hostname() == "::1")
+}
+
+func isAllowedLocalOrigin(origin string) bool {
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	return host == "127.0.0.1" || host == "localhost" || host == "::1"
 }
 
 func writeJSON(w http.ResponseWriter, data any) {

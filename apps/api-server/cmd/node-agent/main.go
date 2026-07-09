@@ -21,7 +21,24 @@ type nodeAgent struct {
 }
 
 func main() {
-	a := &nodeAgent{token: os.Getenv("NODE_AGENT_TOKEN"), automation: platform.AutomationFromEnv(), frps: platform.FRPSManagerFromEnv()}
+	token := strings.TrimSpace(os.Getenv("NODE_AGENT_TOKEN"))
+	bindToken := strings.TrimSpace(os.Getenv("NODE_BIND_TOKEN"))
+	if token == "" && bindToken == "" {
+		log.Fatal("NODE_AGENT_TOKEN or NODE_BIND_TOKEN is required")
+	}
+	a := &nodeAgent{token: token, automation: platform.AutomationFromEnv(), frps: platform.FRPSManagerFromEnv()}
+	if a.token == "" {
+		control := strings.TrimRight(strings.TrimSpace(os.Getenv("CONTROL_PLANE_URL")), "/")
+		if control == "" {
+			log.Fatal("CONTROL_PLANE_URL is required when using NODE_BIND_TOKEN")
+		}
+		if err := a.bindOnce(control, bindToken); err != nil {
+			log.Fatalf("initial node bind failed: %v", err)
+		}
+		if strings.TrimSpace(a.token) == "" {
+			log.Fatal("initial node bind did not return NODE_AGENT_TOKEN")
+		}
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"ok": true, "service": "node-agent"})
@@ -78,8 +95,12 @@ func (a *nodeAgent) bindOnce(control, bindToken string) error {
 	}
 	defer resp.Body.Close()
 	var out struct {
-		Node       platform.Node `json:"node"`
-		AgentToken string        `json:"agent_token"`
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+		Data    struct {
+			Node       platform.Node `json:"node"`
+			AgentToken string        `json:"agent_token"`
+		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return err
@@ -87,9 +108,12 @@ func (a *nodeAgent) bindOnce(control, bindToken string) error {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("control plane returned %s", resp.Status)
 	}
-	if a.token == "" && out.AgentToken != "" {
-		a.token = out.AgentToken
-		log.Printf("node bound to control plane as node %d", out.Node.ID)
+	if !out.Success {
+		return fmt.Errorf("control plane bind failed: %s", out.Message)
+	}
+	if a.token == "" && out.Data.AgentToken != "" {
+		a.token = out.Data.AgentToken
+		log.Printf("node bound to control plane as node %d", out.Data.Node.ID)
 	}
 	return nil
 }
@@ -104,12 +128,10 @@ func atoiEnv(k string, def int) int {
 
 func (a *nodeAgent) auth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if a.token != "" {
-			got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-			if got != a.token {
-				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid node agent token")
-				return
-			}
+		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if strings.TrimSpace(a.token) == "" || got != a.token {
+			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid node agent token")
+			return
 		}
 		next(w, r)
 	}
@@ -159,6 +181,10 @@ func (a *nodeAgent) inspectCertificate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *nodeAgent) testNginx(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	out, err := a.automation.TestNginx(r.Context())
 	if err != nil {
 		writeError(w, 500, "NGINX_TEST_FAILED", err.Error()+"\n"+out)
@@ -168,6 +194,10 @@ func (a *nodeAgent) testNginx(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *nodeAgent) reloadNginx(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	out, err := a.automation.ReloadNginx(r.Context())
 	if err != nil {
 		writeError(w, 500, "NGINX_RELOAD_FAILED", err.Error()+"\n"+out)
@@ -196,6 +226,10 @@ func (a *nodeAgent) frpsLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"logs": text, "path": a.frps.LogPath})
 }
 func (a *nodeAgent) frpsRestart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	res, err := a.frps.Restart(r.Context())
 	if err != nil {
 		writeError(w, 500, "FRPS_RESTART_FAILED", err.Error()+"\n"+res.Output)
@@ -204,6 +238,10 @@ func (a *nodeAgent) frpsRestart(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, res)
 }
 func (a *nodeAgent) frpsReload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	res, err := a.frps.Reload(r.Context())
 	if err != nil {
 		writeError(w, 500, "FRPS_RELOAD_FAILED", err.Error()+"\n"+res.Output)

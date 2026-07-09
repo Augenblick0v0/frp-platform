@@ -55,6 +55,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/user/nodes", s.auth(s.userNodes))
 	s.mux.HandleFunc("/api/user/certificates/request", s.auth(s.userRequestCertificate))
 	s.mux.HandleFunc("/api/tunnels", s.auth(s.tunnels))
+	s.mux.HandleFunc("/api/tunnels/", s.auth(s.tunnelAction))
 	s.mux.HandleFunc("/api/speed-tests/tunnels", s.auth(s.createSpeedTestTunnel))
 	s.mux.HandleFunc("/api/speed-tests/", s.auth(s.finishSpeedTestTunnel))
 	s.mux.HandleFunc("/api/payments/epay/orders", s.auth(s.createEpayOrder))
@@ -205,7 +206,7 @@ func (s *Server) sendCode(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "MAIL_SEND_FAILED", err.Error())
 		return
 	}
-	ok(w, map[string]any{"expires_in": 600, "dev_code": code})
+	ok(w, map[string]any{"expires_in": 600})
 }
 func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 	var in struct{ Email, Code, Password string }
@@ -314,6 +315,17 @@ func (s *Server) userRequestCertificate(w http.ResponseWriter, r *http.Request, 
 	if strings.TrimSpace(in.Email) == "" {
 		in.Email = u.Email
 	}
+	sub, err := s.store.Subscription(u.ID)
+	if err != nil || sub.Status != "active" || !sub.AllowCustomDomain || !sub.AllowAutoCert {
+		handleErr(w, ErrForbidden)
+		return
+	}
+	domain := sanitizeDomain(in.Domain)
+	if domain == "" || !s.userOwnsDomain(u.ID, domain) {
+		handleErr(w, ErrForbidden)
+		return
+	}
+	in.Domain = domain
 	res, err := s.automation.RequestCertificate(r.Context(), in.Domain, in.Email)
 	status := "issued"
 	errorMessage := ""
@@ -326,7 +338,7 @@ func (s *Server) userRequestCertificate(w http.ResponseWriter, r *http.Request, 
 	}
 	certPath, keyPath := s.automation.CertificatePaths(in.Domain)
 	issuedAt, expiresAt := s.automation.InspectCertificate(in.Domain)
-	record, saveErr := s.store.SaveCertificate(CertificateRecord{Domain: in.Domain, Status: status, IssuedAt: issuedAt, ExpiresAt: expiresAt, CertPath: certPath, KeyPath: keyPath, LastCommand: res.Command, LastOutput: res.Output, ErrorMessage: errorMessage})
+	record, saveErr := s.store.SaveCertificate(CertificateRecord{UserID: u.ID, Domain: in.Domain, Status: status, IssuedAt: issuedAt, ExpiresAt: expiresAt, CertPath: certPath, KeyPath: keyPath, LastCommand: res.Command, LastOutput: res.Output, ErrorMessage: errorMessage})
 	if saveErr != nil {
 		fail(w, 500, "CERTIFICATE_SAVE_FAILED", saveErr.Error())
 		return
@@ -338,15 +350,29 @@ func (s *Server) userRequestCertificate(w http.ResponseWriter, r *http.Request, 
 	ok(w, map[string]any{"result": res, "record": record})
 }
 
+func (s *Server) userOwnsDomain(userID int64, domain string) bool {
+	for _, t := range s.store.Tunnels(userID) {
+		if t.Status == "deleted" || t.SpeedTest {
+			continue
+		}
+		if sanitizeDomain(t.Domain) == domain && (t.Type == "http" || t.Type == "https") {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) tunnels(w http.ResponseWriter, r *http.Request, u User) {
 	switch r.Method {
 	case http.MethodGet:
+		s.store.CleanupExpiredSpeedTestTunnels(time.Now())
 		tunnels := s.store.Tunnels(u.ID)
 		if tunnels == nil {
 			tunnels = []Tunnel{}
 		}
 		ok(w, tunnels)
 	case http.MethodPost:
+		s.store.CleanupExpiredSpeedTestTunnels(time.Now())
 		var in Tunnel
 		if !decode(w, r, &in) {
 			return
@@ -361,6 +387,65 @@ func (s *Server) tunnels(w http.ResponseWriter, r *http.Request, u User) {
 		w.WriteHeader(405)
 	}
 }
+
+func (s *Server) tunnelAction(w http.ResponseWriter, r *http.Request, u User) {
+	id, action, okPath := parseTunnelAction(r.URL.Path)
+	if !okPath {
+		fail(w, 404, "TUNNEL_ACTION_NOT_FOUND", "tunnel action not found")
+		return
+	}
+	if action == "" {
+		if r.Method != http.MethodDelete {
+			w.WriteHeader(405)
+			return
+		}
+		if err := s.store.DeleteTunnel(u.ID, id); err != nil {
+			handleErr(w, err)
+			return
+		}
+		ok(w, map[string]any{"deleted": true, "id": id})
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.WriteHeader(405)
+		return
+	}
+	switch action {
+	case "start":
+		t, err := s.store.UpdateTunnelStatus(u.ID, id, "active")
+		if err != nil {
+			handleErr(w, err)
+			return
+		}
+		ok(w, t)
+	case "stop":
+		t, err := s.store.UpdateTunnelStatus(u.ID, id, "disabled")
+		if err != nil {
+			handleErr(w, err)
+			return
+		}
+		ok(w, t)
+	default:
+		fail(w, 404, "TUNNEL_ACTION_NOT_FOUND", "unknown tunnel action")
+	}
+}
+
+func parseTunnelAction(path string) (int64, string, bool) {
+	rest := strings.TrimPrefix(path, "/api/tunnels/")
+	if rest == path || rest == "" {
+		return 0, "", false
+	}
+	parts := strings.Split(strings.Trim(rest, "/"), "/")
+	id, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || id <= 0 {
+		return 0, "", false
+	}
+	if len(parts) == 1 {
+		return id, "", true
+	}
+	return id, parts[1], true
+}
+
 func (s *Server) clientHeartbeat(w http.ResponseWriter, r *http.Request, u User) {
 	ok(w, map[string]any{"status": "online", "server_time": time.Now().Format(time.RFC3339)})
 }
@@ -383,6 +468,12 @@ func (s *Server) clientTraffic(w http.ResponseWriter, r *http.Request, u User) {
 	ok(w, summary)
 }
 func (s *Server) clientTunnels(w http.ResponseWriter, r *http.Request, u User) {
+	frpToken := getenv("FRP_TOKEN", "")
+	if frpToken == "" || frpToken == "change-me" {
+		fail(w, 500, "FRP_TOKEN_NOT_CONFIGURED", "FRP_TOKEN must be configured")
+		return
+	}
+	s.store.CleanupExpiredSpeedTestTunnels(time.Now())
 	st := s.store.Settings()
 	sub, err := s.store.Subscription(u.ID)
 	bandwidth := 0
@@ -408,7 +499,7 @@ func (s *Server) clientTunnels(w http.ResponseWriter, r *http.Request, u User) {
 	for i := range tunnels {
 		tunnels[i].EffectiveBandwidthKbps = effectiveBandwidth(bandwidth, tunnels[i].BandwidthKbps)
 	}
-	ok(w, map[string]any{"server_addr": st.ServerAddr, "server_port": st.FRPServerPort, "token": getenv("FRP_TOKEN", "change-me"), "bandwidth_limit_kbps": bandwidth, "tunnels": tunnels})
+	ok(w, map[string]any{"server_addr": st.ServerAddr, "server_port": st.FRPServerPort, "token": frpToken, "bandwidth_limit_kbps": bandwidth, "tunnels": tunnels})
 }
 
 func (s *Server) createSpeedTestTunnel(w http.ResponseWriter, r *http.Request, u User) {
@@ -420,6 +511,7 @@ func (s *Server) createSpeedTestTunnel(w http.ResponseWriter, r *http.Request, u
 	if !decode(w, r, &in) {
 		return
 	}
+	s.store.CleanupExpiredSpeedTestTunnels(time.Now())
 	t, err := s.store.CreateSpeedTestTunnel(u.ID, in)
 	if err != nil {
 		handleErr(w, err)

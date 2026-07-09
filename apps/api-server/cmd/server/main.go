@@ -14,6 +14,9 @@ func main() {
 	if addr == "" {
 		addr = ":8080"
 	}
+	if err := platform.ValidateRequiredSecrets(); err != nil {
+		log.Fatalf("security configuration error: %v", err)
+	}
 
 	var backend platform.Backend
 	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {

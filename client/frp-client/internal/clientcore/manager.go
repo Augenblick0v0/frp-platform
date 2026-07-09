@@ -3,6 +3,8 @@ package clientcore
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,6 +26,31 @@ type Manager struct {
 	cmd        *exec.Cmd
 	startedAt  *time.Time
 	speedBench *benchmarkService
+}
+
+func (m *Manager) LocalAPIToken() (string, error) {
+	path := filepath.Join(m.workDir, "local_api_token")
+	if b, err := os.ReadFile(path); err == nil {
+		if token := strings.TrimSpace(string(b)); token != "" {
+			return token, nil
+		}
+	}
+	token, err := randomLocalToken()
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(path, []byte(token+"\n"), 0600); err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+func randomLocalToken() (string, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
 type Status struct {

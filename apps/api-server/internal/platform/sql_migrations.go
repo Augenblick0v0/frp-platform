@@ -98,16 +98,58 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(id),
     plan_id BIGINT NOT NULL REFERENCES plans(id),
+    plan_name VARCHAR(100) NOT NULL DEFAULT '',
     starts_at TIMESTAMPTZ NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL,
     traffic_limit_bytes BIGINT NOT NULL,
     traffic_used_bytes BIGINT NOT NULL DEFAULT 0,
     bandwidth_limit_kbps INTEGER NOT NULL,
+    allow_tcp BOOLEAN NOT NULL DEFAULT false,
+    allow_udp BOOLEAN NOT NULL DEFAULT false,
+    allow_http BOOLEAN NOT NULL DEFAULT false,
+    allow_https BOOLEAN NOT NULL DEFAULT false,
+    allow_custom_domain BOOLEAN NOT NULL DEFAULT false,
+    allow_auto_cert BOOLEAN NOT NULL DEFAULT false,
+    max_tunnels INTEGER NOT NULL DEFAULT 0,
+    max_tcp_tunnels INTEGER NOT NULL DEFAULT 0,
+    max_udp_tunnels INTEGER NOT NULL DEFAULT 0,
+    max_http_tunnels INTEGER NOT NULL DEFAULT 0,
+    max_https_tunnels INTEGER NOT NULL DEFAULT 0,
+    max_domains INTEGER NOT NULL DEFAULT 0,
     status VARCHAR(32) NOT NULL DEFAULT 'active',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id);
+ALTER TABLE IF EXISTS subscriptions ADD COLUMN IF NOT EXISTS plan_name VARCHAR(100) NOT NULL DEFAULT '';
+ALTER TABLE IF EXISTS subscriptions ADD COLUMN IF NOT EXISTS allow_tcp BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE IF EXISTS subscriptions ADD COLUMN IF NOT EXISTS allow_udp BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE IF EXISTS subscriptions ADD COLUMN IF NOT EXISTS allow_http BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE IF EXISTS subscriptions ADD COLUMN IF NOT EXISTS allow_https BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE IF EXISTS subscriptions ADD COLUMN IF NOT EXISTS allow_custom_domain BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE IF EXISTS subscriptions ADD COLUMN IF NOT EXISTS allow_auto_cert BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE IF EXISTS subscriptions ADD COLUMN IF NOT EXISTS max_tunnels INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE IF EXISTS subscriptions ADD COLUMN IF NOT EXISTS max_tcp_tunnels INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE IF EXISTS subscriptions ADD COLUMN IF NOT EXISTS max_udp_tunnels INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE IF EXISTS subscriptions ADD COLUMN IF NOT EXISTS max_http_tunnels INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE IF EXISTS subscriptions ADD COLUMN IF NOT EXISTS max_https_tunnels INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE IF EXISTS subscriptions ADD COLUMN IF NOT EXISTS max_domains INTEGER NOT NULL DEFAULT 0;
+UPDATE subscriptions sub SET
+    plan_name = COALESCE(NULLIF(sub.plan_name,''), p.name),
+    allow_tcp = p.allow_tcp,
+    allow_udp = p.allow_udp,
+    allow_http = p.allow_http,
+    allow_https = p.allow_https,
+    allow_custom_domain = p.allow_custom_domain,
+    allow_auto_cert = p.allow_auto_cert,
+    max_tunnels = p.max_tunnels,
+    max_tcp_tunnels = p.max_tcp_tunnels,
+    max_udp_tunnels = p.max_udp_tunnels,
+    max_http_tunnels = p.max_http_tunnels,
+    max_https_tunnels = p.max_https_tunnels,
+    max_domains = p.max_domains
+FROM plans p
+WHERE sub.plan_id=p.id AND sub.plan_name='';
 
 CREATE TABLE IF NOT EXISTS redeem_codes (
     id BIGSERIAL PRIMARY KEY,
@@ -159,6 +201,7 @@ CREATE INDEX IF NOT EXISTS idx_tunnels_speed_test_expires ON tunnels(speed_test,
 
 CREATE TABLE IF NOT EXISTS port_allocations (
     id BIGSERIAL PRIMARY KEY,
+    node_id BIGINT NOT NULL DEFAULT 0,
     protocol VARCHAR(8) NOT NULL,
     port INTEGER NOT NULL,
     tunnel_id BIGINT REFERENCES tunnels(id),
@@ -166,11 +209,15 @@ CREATE TABLE IF NOT EXISTS port_allocations (
     status VARCHAR(32) NOT NULL DEFAULT 'allocated',
     allocated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     released_at TIMESTAMPTZ,
-    UNIQUE(protocol, port)
+    UNIQUE(node_id, protocol, port)
 );
+ALTER TABLE IF EXISTS port_allocations ADD COLUMN IF NOT EXISTS node_id BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE IF EXISTS port_allocations DROP CONSTRAINT IF EXISTS port_allocations_protocol_port_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_port_allocations_node_protocol_port ON port_allocations(node_id, protocol, port);
 
 CREATE TABLE IF NOT EXISTS certificates (
     id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES users(id),
     domain VARCHAR(255) NOT NULL UNIQUE,
     status VARCHAR(32) NOT NULL DEFAULT 'none',
     issued_at TIMESTAMPTZ,
@@ -183,6 +230,7 @@ CREATE TABLE IF NOT EXISTS certificates (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE IF EXISTS certificates ADD COLUMN IF NOT EXISTS user_id BIGINT REFERENCES users(id);
 
 CREATE TABLE IF NOT EXISTS traffic_logs (
     id BIGSERIAL PRIMARY KEY,

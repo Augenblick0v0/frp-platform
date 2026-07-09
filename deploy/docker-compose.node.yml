@@ -17,15 +17,17 @@ services:
 
   frps:
     image: snowdreamtech/frps:latest
-    entrypoint: ["/usr/bin/frps"]
+    entrypoint: ["/bin/sh", "-ec"]
     container_name: frp-node-frps
-    command: ["-c", "/etc/frp/frps.toml"]
+    command: [": \"$${FRP_TOKEN:?FRP_TOKEN is required}\"; sed \"s/__REPLACE_WITH_FRP_TOKEN__/$${FRP_TOKEN}/g\" /etc/frp/frps.template.toml > /tmp/frps.toml; exec /usr/bin/frps -c /tmp/frps.toml"]
+    environment:
+      FRP_TOKEN: ${FRP_TOKEN}
     ports:
       - "${FRP_BIND_PORT:-7000}:${FRP_BIND_PORT:-7000}"
       - "${TCP_PORT_START:-20000}-${TCP_PORT_END:-29999}:${TCP_PORT_START:-20000}-${TCP_PORT_END:-29999}/tcp"
       - "${UDP_PORT_START:-30000}-${UDP_PORT_END:-39999}:${UDP_PORT_START:-30000}-${UDP_PORT_END:-39999}/udp"
     volumes:
-      - ./frps/frps.toml:/etc/frp/frps.toml:ro
+      - ./frps/frps.toml:/etc/frp/frps.template.toml:ro
       - ./logs/frps:/var/log/frp
     restart: unless-stopped
 
@@ -34,10 +36,11 @@ services:
       context: ..
       dockerfile: apps/node-agent/Dockerfile
     container_name: frp-node-agent
-    env_file: .env.node
     environment:
       NODE_AGENT_ADDR: ":8090"
       NODE_AGENT_TOKEN: ${NODE_AGENT_TOKEN}
+      NODE_BIND_TOKEN: ${NODE_BIND_TOKEN}
+      CONTROL_PLANE_URL: ${CONTROL_PLANE_URL}
       NGINX_CONF_DIR: /app/runtime/nginx-conf.d
       ACME_WEBROOT: /var/www/certbot
       LETSENCRYPT_DIR: /etc/letsencrypt
@@ -52,14 +55,13 @@ services:
       FRPS_RESTART_CMD: ${FRPS_RESTART_CMD}
       FRPS_RELOAD_CMD: ${FRPS_RELOAD_CMD}
     ports:
-      - "8090:8090"
+      - "127.0.0.1:8090:8090"
     volumes:
       - ./nginx-node/conf.d:/app/runtime/nginx-conf.d
       - ./certbot/www:/var/www/certbot
       - ./certbot/letsencrypt:/etc/letsencrypt
       - ./frps:/app/runtime/frps:ro
       - ./logs/frps:/app/runtime/logs/frps
-      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - nginx
       - frps

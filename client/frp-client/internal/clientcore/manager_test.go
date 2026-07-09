@@ -2,6 +2,8 @@ package clientcore
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -35,6 +37,32 @@ func TestManagerWriteConfigAndLogs(t *testing.T) {
 	}
 	if logs != "hello log" {
 		t.Fatalf("logs=%q", logs)
+	}
+}
+
+func TestLocalServerRequiresTokenForMutations(t *testing.T) {
+	dir := t.TempDir()
+	m, err := NewManager(dir, "frpc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewLocalServer(m, t.TempDir())
+	req := httptest.NewRequest(http.MethodPost, "/api/frpc/start", nil)
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without local token, got %d", rr.Code)
+	}
+	token, err := m.LocalAPIToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/frpc/start", nil)
+	req.Header.Set("X-Local-Token", token)
+	rr = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+	if rr.Code == http.StatusUnauthorized {
+		t.Fatalf("valid local token should not be rejected")
 	}
 }
 

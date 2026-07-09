@@ -1,5 +1,7 @@
 package platform
 
+import "time"
+
 type Backend interface {
 	AdminLogin(email, password string) (string, AdminUser, error)
 	AdminByToken(token string) (AdminUser, error)
@@ -20,9 +22,12 @@ type Backend interface {
 	Redeem(userID int64, code string) (Subscription, error)
 	Subscription(userID int64) (Subscription, error)
 	CreateTunnel(userID int64, req Tunnel) (Tunnel, error)
+	UpdateTunnelStatus(userID int64, tunnelID int64, status string) (Tunnel, error)
+	DeleteTunnel(userID int64, tunnelID int64) error
 	CreateSpeedTestTunnel(userID int64, req SpeedTestTunnelRequest) (SpeedTestTunnel, error)
 	SpeedTestTunnel(userID int64, tunnelID int64) (SpeedTestTunnel, error)
 	FinishSpeedTestTunnel(userID int64, tunnelID int64) error
+	CleanupExpiredSpeedTestTunnels(now time.Time) int
 	Tunnels(userID int64) []Tunnel
 	AllTunnels() []Tunnel
 	Settings() Settings

@@ -19,12 +19,15 @@ services:
       context: ..
       dockerfile: apps/api-server/Dockerfile
     container_name: frp-control-api
-    env_file: .env.control
+    env_file:
+      - path: .env.control
+        required: false
     environment:
       HTTP_ADDR: ":8080"
       DATABASE_URL: ${DATABASE_URL}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      FRP_TOKEN: ${FRP_TOKEN}
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT}
       SMTP_USERNAME: ${SMTP_USERNAME}
@@ -69,7 +72,9 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: frp-control-postgres
-    env_file: .env.control
+    env_file:
+      - path: .env.control
+        required: false
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -91,7 +96,9 @@ services:
     container_name: frp-control-mail
     hostname: mail
     domainname: ${PLATFORM_DOMAIN}
-    env_file: .env.control
+    env_file:
+      - path: .env.control
+        required: false
     ports:
       - "25:25"
       - "587:587"

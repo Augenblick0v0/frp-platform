@@ -10,4 +10,4 @@ WORKDIR /opt/frp-client
 COPY --from=builder /out/frp-client /opt/frp-client/frp-client
 COPY apps/client-webui /opt/frp-client/webui
 EXPOSE 18080
-CMD ["/opt/frp-client/frp-client", "-addr", "0.0.0.0:18080", "-web", "/opt/frp-client/webui"]
+CMD ["/opt/frp-client/frp-client", "-addr", "127.0.0.1:18080", "-web", "/opt/frp-client/webui"]

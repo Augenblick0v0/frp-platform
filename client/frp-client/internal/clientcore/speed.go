@@ -17,6 +17,9 @@ import (
 	"time"
 )
 
+const defaultProbeBytes int64 = 8 * 1024 * 1024
+const maxProbeBytes int64 = 64 * 1024 * 1024
+
 type SpeedTestRunRequest struct {
 	APIBase            string `json:"api_base"`
 	Token              string `json:"token"`
@@ -103,11 +106,14 @@ func (m *Manager) RunSpeedTest(ctx context.Context, in SpeedTestRunRequest) (Spe
 	if typ == "" {
 		typ = "tcp"
 	}
-	if in.DownloadBytes <= 0 {
-		in.DownloadBytes = 8 * 1024 * 1024
+	var err error
+	in.DownloadBytes, err = normalizeProbeBytes(in.DownloadBytes, defaultProbeBytes)
+	if err != nil {
+		return SpeedTestResult{}, err
 	}
-	if in.UploadBytes <= 0 {
-		in.UploadBytes = 8 * 1024 * 1024
+	in.UploadBytes, err = normalizeProbeBytes(in.UploadBytes, defaultProbeBytes)
+	if err != nil {
+		return SpeedTestResult{}, err
 	}
 	if in.DurationSeconds <= 0 {
 		in.DurationSeconds = 15
@@ -162,6 +168,19 @@ func (m *Manager) RunSpeedTest(ctx context.Context, in SpeedTestRunRequest) (Spe
 	_ = reportTrafficToServer(ctx, in.APIBase, in.Token, tunnel.ID, result.BytesIn, result.BytesOut)
 	cleanup()
 	return result, nil
+}
+
+func normalizeProbeBytes(n int64, def int64) (int64, error) {
+	if def <= 0 {
+		def = defaultProbeBytes
+	}
+	if n <= 0 {
+		return def, nil
+	}
+	if n > maxProbeBytes {
+		return 0, fmt.Errorf("speed probe bytes exceeds %d", maxProbeBytes)
+	}
+	return n, nil
 }
 
 func (m *Manager) Restart() error {
@@ -286,10 +305,20 @@ func startUDPBenchmarkService() (*benchmarkService, error) {
 			case 'p':
 				_, _ = pc.WriteTo([]byte("p"), addr)
 			case 'd':
-				for i := 0; i < 64; i++ {
+				want := int64(defaultProbeBytes)
+				if n >= 9 {
+					want = int64(binary.BigEndian.Uint64(buf[1:9]))
+				}
+				var sent int64
+				for sent < want {
 					payload := make([]byte, 1200)
 					payload[0] = 'd'
-					_, _ = pc.WriteTo(payload, addr)
+					if remain := want - sent; remain < int64(len(payload)) {
+						payload = payload[:remain]
+						payload[0] = 'd'
+					}
+					w, _ := pc.WriteTo(payload, addr)
+					sent += int64(w)
 				}
 			case 'u':
 				_, _ = pc.WriteTo([]byte("a"), addr)
@@ -458,10 +487,14 @@ type measurement struct {
 }
 
 func (m measurement) kbps() float64 {
-	if m.elapsed <= 0 {
-		return 0
+	elapsed := m.elapsed
+	if elapsed <= 0 {
+		if m.bytes <= 0 {
+			return 0
+		}
+		elapsed = time.Nanosecond
 	}
-	return float64(m.bytes*8) / m.elapsed.Seconds() / 1000
+	return float64(m.bytes*8) / elapsed.Seconds() / 1000
 }
 
 func measureHTTPLatency(ctx context.Context, rawURL string) (float64, error) {
@@ -472,6 +505,10 @@ func measureHTTPLatency(ctx context.Context, rawURL string) (float64, error) {
 		return 0, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return 0, fmt.Errorf("http status %d", resp.StatusCode)
+	}
 	_, _ = io.Copy(io.Discard, resp.Body)
 	return float64(time.Since(start).Microseconds()) / 1000, nil
 }
@@ -483,6 +520,10 @@ func measureHTTPDownload(ctx context.Context, rawURL string) (measurement, float
 		return measurement{}, 0, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return measurement{}, 0, fmt.Errorf("http status %d", resp.StatusCode)
+	}
 	return copyMeasured(resp.Body)
 }
 
@@ -495,6 +536,10 @@ func measureHTTPUpload(ctx context.Context, rawURL string, n int64) (measurement
 		return measurement{}, 0, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return measurement{}, 0, fmt.Errorf("http status %d", resp.StatusCode)
+	}
 	_, _ = io.Copy(io.Discard, resp.Body)
 	m := measurement{bytes: n, elapsed: time.Since(start)}
 	return m, m.kbps(), nil
@@ -521,7 +566,10 @@ func measureTCPDownload(ctx context.Context, addr string, n int64) (measurement,
 		return measurement{}, 0, err
 	}
 	defer conn.Close()
-	_, _ = conn.Write([]byte{'d'})
+	var req [9]byte
+	req[0] = 'd'
+	binary.BigEndian.PutUint64(req[1:], uint64(n))
+	_, _ = conn.Write(req[:])
 	writeInt64(conn, n)
 	return copyMeasured(conn)
 }
@@ -630,10 +678,18 @@ func copyMeasured(r io.Reader) (measurement, float64, error) {
 			break
 		}
 		if err != nil {
+			if total > 0 && isConnectionReset(err) {
+				break
+			}
 			return measurement{}, 0, err
 		}
 	}
 	return measurement{bytes: total, elapsed: time.Since(start)}, peak.kbps(), nil
+}
+
+func isConnectionReset(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "connection reset") || strings.Contains(msg, "forcibly closed")
 }
 
 type peakMeter struct {

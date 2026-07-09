@@ -17,3 +17,10 @@ func TestHashAndVerifyPassword(t *testing.T) {
 		t.Fatal("wrong password verified")
 	}
 }
+
+func TestPlaintextPasswordFallbackDisabledByDefault(t *testing.T) {
+	t.Setenv("ALLOW_LEGACY_PLAINTEXT_PASSWORDS", "")
+	if VerifyPassword("secret", "secret") {
+		t.Fatal("plaintext password fallback must be disabled by default")
+	}
+}

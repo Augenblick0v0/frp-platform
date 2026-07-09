@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"text/template"
@@ -89,8 +90,8 @@ func (a *Automation) RenderHTTPSConfig(domain string) (string, error) {
 	data := map[string]string{
 		"Domain":      domain,
 		"Upstream":    a.FRPVhostURL,
-		"CertPath":    filepath.Join(a.LetsEncryptDir, "live", domain, "fullchain.pem"),
-		"KeyPath":     filepath.Join(a.LetsEncryptDir, "live", domain, "privkey.pem"),
+		"CertPath":    path.Join(a.LetsEncryptDir, "live", domain, "fullchain.pem"),
+		"KeyPath":     path.Join(a.LetsEncryptDir, "live", domain, "privkey.pem"),
 		"ACMEWebroot": a.WebrootDir,
 	}
 	var buf bytes.Buffer

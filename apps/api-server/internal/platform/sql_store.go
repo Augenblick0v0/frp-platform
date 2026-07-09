@@ -64,7 +64,10 @@ func (s *SQLStore) AdminLogin(email, password string) (string, AdminUser, error)
 	if !VerifyPassword(admin.Password, password) || admin.Status != "active" {
 		return "", AdminUser{}, ErrUnauthorized
 	}
-	token := fmt.Sprintf("admin-token-%d-%d", admin.ID, time.Now().UnixNano())
+	token, err := randomToken("admin")
+	if err != nil {
+		return "", AdminUser{}, err
+	}
 	_, err = s.db.Exec(`INSERT INTO admin_sessions (token,admin_user_id,expires_at) VALUES ($1,$2,$3)`, token, admin.ID, time.Now().Add(24*time.Hour))
 	if err != nil {
 		return "", AdminUser{}, err
@@ -82,8 +85,11 @@ func (s *SQLStore) AdminByToken(token string) (AdminUser, error) {
 }
 
 func (s *SQLStore) SendEmailCode(email, purpose string) string {
-	code := "123456"
-	_, _ = s.db.Exec(`INSERT INTO email_verification_codes (email, code, purpose, expires_at) VALUES ($1,$2,$3,$4)`, strings.ToLower(email), code, purpose, time.Now().Add(10*time.Minute))
+	code, err := randomDigits(6)
+	if err != nil {
+		code = fmt.Sprintf("%06d", time.Now().UnixNano()%1000000)
+	}
+	_, _ = s.db.Exec(`INSERT INTO email_verification_codes (email, code, purpose, expires_at) VALUES ($1,$2,$3,$4)`, strings.ToLower(strings.TrimSpace(email)), code, strings.TrimSpace(purpose), time.Now().Add(10*time.Minute))
 	return code
 }
 
@@ -123,7 +129,10 @@ func (s *SQLStore) Login(email, password string) (string, User, error) {
 	if !VerifyPassword(u.Password, password) || u.Status != "active" {
 		return "", User{}, ErrUnauthorized
 	}
-	token := fmt.Sprintf("token-%d-%d", u.ID, time.Now().UnixNano())
+	token, err := randomToken("token")
+	if err != nil {
+		return "", User{}, err
+	}
 	_, err = s.db.Exec(`INSERT INTO sessions (token,user_id,expires_at) VALUES ($1,$2,$3)`, token, u.ID, time.Now().Add(24*time.Hour))
 	if err != nil {
 		return "", User{}, err
@@ -133,7 +142,7 @@ func (s *SQLStore) Login(email, password string) (string, User, error) {
 
 func (s *SQLStore) UserByToken(token string) (User, error) {
 	var u User
-	err := s.db.QueryRow(`SELECT u.id,u.email,u.password_hash,u.status,u.created_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=$1 AND s.expires_at>now()`, token).Scan(&u.ID, &u.Email, &u.Password, &u.Status, &u.CreatedAt)
+	err := s.db.QueryRow(`SELECT u.id,u.email,u.password_hash,u.status,u.created_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=$1 AND s.expires_at>now() AND u.status='active'`, token).Scan(&u.ID, &u.Email, &u.Password, &u.Status, &u.CreatedAt)
 	if err != nil {
 		return User{}, ErrUnauthorized
 	}
@@ -201,7 +210,7 @@ func (s *SQLStore) MarkPaymentOrderPaid(outTradeNo, providerTradeNo string) (Pay
 		}
 		_, _ = tx.Exec(`UPDATE subscriptions SET status='replaced' WHERE user_id=$1 AND status='active'`, order.UserID)
 		expires := now.AddDate(0, 0, p.DurationDays)
-		_, err = tx.Exec(`INSERT INTO subscriptions (user_id,plan_id,starts_at,expires_at,traffic_limit_bytes,bandwidth_limit_kbps,status) VALUES ($1,$2,$3,$4,$5,$6,'active')`, order.UserID, p.ID, now, expires, p.TrafficLimitBytes, p.BandwidthKbps)
+		_, err = tx.Exec(`INSERT INTO subscriptions (user_id,plan_id,plan_name,starts_at,expires_at,traffic_limit_bytes,bandwidth_limit_kbps,allow_tcp,allow_udp,allow_http,allow_https,allow_custom_domain,allow_auto_cert,max_tunnels,max_tcp_tunnels,max_udp_tunnels,max_http_tunnels,max_https_tunnels,max_domains,status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'active')`, order.UserID, p.ID, p.Name, now, expires, p.TrafficLimitBytes, p.BandwidthKbps, p.AllowTCP, p.AllowUDP, p.AllowHTTP, p.AllowHTTPS, p.AllowCustomDomain, p.AllowAutoCert, p.MaxTunnels, p.MaxTCPTunnels, p.MaxUDPTunnels, p.MaxHTTPTunnels, p.MaxHTTPSTunnels, p.MaxDomains)
 		if err != nil {
 			return PaymentOrder{}, Subscription{}, err
 		}
@@ -227,11 +236,15 @@ func (s *SQLStore) Redeem(userID int64, code string) (Subscription, error) {
 	defer tx.Rollback()
 	var planID int64
 	var status string
-	err = tx.QueryRow(`SELECT plan_id,status FROM redeem_codes WHERE code=$1 FOR UPDATE`, strings.TrimSpace(code)).Scan(&planID, &status)
+	var expiresAt sql.NullTime
+	err = tx.QueryRow(`SELECT plan_id,status,expires_at FROM redeem_codes WHERE code=$1 FOR UPDATE`, strings.TrimSpace(code)).Scan(&planID, &status, &expiresAt)
 	if err != nil {
 		return Subscription{}, ErrNotFound
 	}
 	if status != "unused" {
+		return Subscription{}, ErrForbidden
+	}
+	if expiresAt.Valid && time.Now().After(expiresAt.Time) {
 		return Subscription{}, ErrForbidden
 	}
 	p, err := scanPlan(tx.QueryRow(`SELECT id,name,coalesce(description,''),price_cents,duration_days,traffic_limit_bytes,bandwidth_limit_kbps,max_tunnels,max_tcp_tunnels,max_udp_tunnels,max_http_tunnels,max_https_tunnels,allow_tcp,allow_udp,allow_http,allow_https,allow_custom_domain,max_domains,allow_auto_cert,status FROM plans WHERE id=$1`, planID))
@@ -245,7 +258,7 @@ func (s *SQLStore) Redeem(userID int64, code string) (Subscription, error) {
 		return Subscription{}, err
 	}
 	_, _ = tx.Exec(`UPDATE subscriptions SET status='replaced' WHERE user_id=$1 AND status='active'`, userID)
-	_, err = tx.Exec(`INSERT INTO subscriptions (user_id,plan_id,starts_at,expires_at,traffic_limit_bytes,bandwidth_limit_kbps,status) VALUES ($1,$2,$3,$4,$5,$6,'active')`, userID, p.ID, now, expires, p.TrafficLimitBytes, p.BandwidthKbps)
+	_, err = tx.Exec(`INSERT INTO subscriptions (user_id,plan_id,plan_name,starts_at,expires_at,traffic_limit_bytes,bandwidth_limit_kbps,allow_tcp,allow_udp,allow_http,allow_https,allow_custom_domain,allow_auto_cert,max_tunnels,max_tcp_tunnels,max_udp_tunnels,max_http_tunnels,max_https_tunnels,max_domains,status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'active')`, userID, p.ID, p.Name, now, expires, p.TrafficLimitBytes, p.BandwidthKbps, p.AllowTCP, p.AllowUDP, p.AllowHTTP, p.AllowHTTPS, p.AllowCustomDomain, p.AllowAutoCert, p.MaxTunnels, p.MaxTCPTunnels, p.MaxUDPTunnels, p.MaxHTTPTunnels, p.MaxHTTPSTunnels, p.MaxDomains)
 	if err != nil {
 		return Subscription{}, err
 	}
@@ -256,23 +269,21 @@ func (s *SQLStore) Redeem(userID int64, code string) (Subscription, error) {
 }
 
 func (s *SQLStore) Subscription(userID int64) (Subscription, error) {
-	row := s.db.QueryRow(`SELECT p.id,p.name,coalesce(p.description,''),p.price_cents,p.duration_days,sub.traffic_limit_bytes,sub.bandwidth_limit_kbps,p.max_tunnels,p.max_tcp_tunnels,p.max_udp_tunnels,p.max_http_tunnels,p.max_https_tunnels,p.allow_tcp,p.allow_udp,p.allow_http,p.allow_https,p.allow_custom_domain,p.max_domains,p.allow_auto_cert,sub.status,sub.expires_at,sub.traffic_used_bytes FROM subscriptions sub JOIN plans p ON p.id=sub.plan_id WHERE sub.user_id=$1 AND sub.status='active' ORDER BY sub.expires_at DESC LIMIT 1`, userID)
-	var p Plan
-	var expires time.Time
-	var used int64
-	err := row.Scan(&p.ID, &p.Name, &p.Description, &p.PriceCents, &p.DurationDays, &p.TrafficLimitBytes, &p.BandwidthKbps, &p.MaxTunnels, &p.MaxTCPTunnels, &p.MaxUDPTunnels, &p.MaxHTTPTunnels, &p.MaxHTTPSTunnels, &p.AllowTCP, &p.AllowUDP, &p.AllowHTTP, &p.AllowHTTPS, &p.AllowCustomDomain, &p.MaxDomains, &p.AllowAutoCert, &p.Status, &expires, &used)
+	row := s.db.QueryRow(`SELECT plan_id,coalesce(nullif(plan_name,''),'plan'),traffic_limit_bytes,traffic_used_bytes,bandwidth_limit_kbps,allow_tcp,allow_udp,allow_http,allow_https,allow_custom_domain,allow_auto_cert,max_tunnels,max_tcp_tunnels,max_udp_tunnels,max_http_tunnels,max_https_tunnels,max_domains,status,expires_at FROM subscriptions WHERE user_id=$1 AND status='active' ORDER BY expires_at DESC LIMIT 1`, userID)
+	var sub Subscription
+	err := row.Scan(&sub.PlanID, &sub.PlanName, &sub.TrafficLimitBytes, &sub.TrafficUsedBytes, &sub.BandwidthKbps, &sub.AllowTCP, &sub.AllowUDP, &sub.AllowHTTP, &sub.AllowHTTPS, &sub.AllowCustomDomain, &sub.AllowAutoCert, &sub.MaxTunnels, &sub.MaxTCPTunnels, &sub.MaxUDPTunnels, &sub.MaxHTTPTunnels, &sub.MaxHTTPSTunnels, &sub.MaxDomains, &sub.Status, &sub.ExpiresAt)
 	if err != nil {
 		return Subscription{}, ErrNotFound
 	}
-	sub := planToSub(userID, p, expires)
-	sub.TrafficUsedBytes = used
-	if time.Now().After(expires) {
+	sub.UserID = userID
+	if time.Now().After(sub.ExpiresAt) {
 		sub.Status = "expired"
 	}
 	return sub, nil
 }
 
 func (s *SQLStore) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
+	s.CleanupExpiredSpeedTestTunnels(time.Now())
 	sub, err := s.Subscription(userID)
 	if err != nil || sub.Status != "active" {
 		return Tunnel{}, ErrForbidden
@@ -284,6 +295,13 @@ func (s *SQLStore) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
 		return Tunnel{}, err
 	}
 	st := s.Settings()
+	if req.NodeID > 0 {
+		node, err := s.Node(req.NodeID)
+		if err != nil {
+			return Tunnel{}, err
+		}
+		st = settingsFromNode(st, node)
+	}
 	typ := strings.ToLower(req.Type)
 	if req.Name == "" || req.LocalHost == "" || req.LocalPort <= 0 {
 		return Tunnel{}, fmt.Errorf("invalid tunnel request")
@@ -296,13 +314,13 @@ func (s *SQLStore) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
 		return Tunnel{}, err
 	}
 	defer tx.Rollback()
-	t := Tunnel{UserID: userID, Name: req.Name, Type: typ, LocalHost: req.LocalHost, LocalPort: req.LocalPort, UseHTTPS: req.UseHTTPS, BandwidthKbps: req.BandwidthKbps, EffectiveBandwidthKbps: effectiveBandwidth(sub.BandwidthKbps, req.BandwidthKbps), CreatedAt: time.Now()}
+	t := Tunnel{UserID: userID, NodeID: req.NodeID, Name: req.Name, Type: typ, LocalHost: req.LocalHost, LocalPort: req.LocalPort, UseHTTPS: req.UseHTTPS, BandwidthKbps: req.BandwidthKbps, EffectiveBandwidthKbps: effectiveBandwidth(sub.BandwidthKbps, req.BandwidthKbps), CreatedAt: time.Now()}
 	switch typ {
 	case "tcp":
 		if !sub.AllowTCP {
 			return Tunnel{}, ErrForbidden
 		}
-		port, err := s.allocateSQLPort(tx, "tcp", st.TCPPortStart, st.TCPPortEnd)
+		port, err := s.allocateSQLPort(tx, req.NodeID, "tcp", st.TCPPortStart, st.TCPPortEnd)
 		if err != nil {
 			return Tunnel{}, err
 		}
@@ -313,7 +331,7 @@ func (s *SQLStore) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
 		if !sub.AllowUDP {
 			return Tunnel{}, ErrForbidden
 		}
-		port, err := s.allocateSQLPort(tx, "udp", st.UDPPortStart, st.UDPPortEnd)
+		port, err := s.allocateSQLPort(tx, req.NodeID, "udp", st.UDPPortStart, st.UDPPortEnd)
 		if err != nil {
 			return Tunnel{}, err
 		}
@@ -321,6 +339,9 @@ func (s *SQLStore) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
 		t.Status = "active"
 		t.PublicURL = fmt.Sprintf("%s:%d", st.ServerAddr, port)
 	case "http", "https":
+		if !sub.AllowCustomDomain {
+			return Tunnel{}, ErrForbidden
+		}
 		if typ == "http" && !sub.AllowHTTP {
 			return Tunnel{}, ErrForbidden
 		}
@@ -343,7 +364,7 @@ func (s *SQLStore) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
 	default:
 		return Tunnel{}, fmt.Errorf("unsupported tunnel type")
 	}
-	err = tx.QueryRow(`INSERT INTO tunnels (user_id,name,type,local_host,local_port,remote_port,domain,use_https,bandwidth_limit_kbps,status,public_url) VALUES ($1,$2,$3,$4,$5,NULLIF($6,0),NULLIF($7,''),$8,$9,$10,$11) RETURNING id,created_at`, userID, t.Name, t.Type, t.LocalHost, t.LocalPort, t.RemotePort, t.Domain, t.UseHTTPS, t.BandwidthKbps, t.Status, t.PublicURL).Scan(&t.ID, &t.CreatedAt)
+	err = tx.QueryRow(`INSERT INTO tunnels (user_id,node_id,name,type,local_host,local_port,remote_port,domain,use_https,bandwidth_limit_kbps,status,public_url) VALUES ($1,NULLIF($2,0),$3,$4,$5,$6,NULLIF($7,0),NULLIF($8,''),$9,$10,$11,$12) RETURNING id,created_at`, userID, t.NodeID, t.Name, t.Type, t.LocalHost, t.LocalPort, t.RemotePort, t.Domain, t.UseHTTPS, t.BandwidthKbps, t.Status, t.PublicURL).Scan(&t.ID, &t.CreatedAt)
 	if err != nil {
 		if isUnique(err) {
 			return Tunnel{}, ErrConflict
@@ -351,7 +372,7 @@ func (s *SQLStore) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
 		return Tunnel{}, err
 	}
 	if t.RemotePort != 0 {
-		_, err = tx.Exec(`UPDATE port_allocations SET tunnel_id=$1,user_id=$2 WHERE protocol=$3 AND port=$4`, t.ID, userID, typ, t.RemotePort)
+		_, err = tx.Exec(`UPDATE port_allocations SET tunnel_id=$1,user_id=$2 WHERE node_id=$3 AND protocol=$4 AND port=$5`, t.ID, userID, t.NodeID, typ, t.RemotePort)
 		if err != nil {
 			return Tunnel{}, err
 		}
@@ -363,6 +384,7 @@ func (s *SQLStore) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
 }
 
 func (s *SQLStore) CreateSpeedTestTunnel(userID int64, req SpeedTestTunnelRequest) (SpeedTestTunnel, error) {
+	s.CleanupExpiredSpeedTestTunnels(time.Now())
 	sub, err := s.Subscription(userID)
 	if err != nil || sub.Status != "active" {
 		return SpeedTestTunnel{}, ErrForbidden
@@ -397,7 +419,7 @@ func (s *SQLStore) CreateSpeedTestTunnel(userID int64, req SpeedTestTunnelReques
 		if !sub.AllowTCP {
 			return SpeedTestTunnel{}, ErrForbidden
 		}
-		port, err := s.allocateSQLPort(tx, "tcp", st.TCPPortStart, st.TCPPortEnd)
+		port, err := s.allocateSQLPort(tx, req.NodeID, "tcp", st.TCPPortStart, st.TCPPortEnd)
 		if err != nil {
 			return SpeedTestTunnel{}, err
 		}
@@ -407,7 +429,7 @@ func (s *SQLStore) CreateSpeedTestTunnel(userID int64, req SpeedTestTunnelReques
 		if !sub.AllowUDP {
 			return SpeedTestTunnel{}, ErrForbidden
 		}
-		port, err := s.allocateSQLPort(tx, "udp", st.UDPPortStart, st.UDPPortEnd)
+		port, err := s.allocateSQLPort(tx, req.NodeID, "udp", st.UDPPortStart, st.UDPPortEnd)
 		if err != nil {
 			return SpeedTestTunnel{}, err
 		}
@@ -439,7 +461,7 @@ func (s *SQLStore) CreateSpeedTestTunnel(userID int64, req SpeedTestTunnelReques
 		return SpeedTestTunnel{}, err
 	}
 	if t.RemotePort != 0 {
-		if _, err := tx.Exec(`UPDATE port_allocations SET tunnel_id=$1,user_id=$2 WHERE protocol=$3 AND port=$4`, t.ID, userID, typ, t.RemotePort); err != nil {
+		if _, err := tx.Exec(`UPDATE port_allocations SET tunnel_id=$1,user_id=$2 WHERE node_id=$3 AND protocol=$4 AND port=$5`, t.ID, userID, t.NodeID, typ, t.RemotePort); err != nil {
 			return SpeedTestTunnel{}, err
 		}
 	}
@@ -469,7 +491,7 @@ func (s *SQLStore) FinishSpeedTestTunnel(userID int64, tunnelID int64) error {
 	defer tx.Rollback()
 	var t Tunnel
 	var expires sql.NullTime
-	err = tx.QueryRow(`SELECT id,user_id,type,coalesce(remote_port,0),coalesce(domain,''),speed_test,expires_at FROM tunnels WHERE id=$1 FOR UPDATE`, tunnelID).Scan(&t.ID, &t.UserID, &t.Type, &t.RemotePort, &t.Domain, &t.SpeedTest, &expires)
+	err = tx.QueryRow(`SELECT id,user_id,coalesce(node_id,0),type,coalesce(remote_port,0),coalesce(domain,''),speed_test,expires_at FROM tunnels WHERE id=$1 FOR UPDATE`, tunnelID).Scan(&t.ID, &t.UserID, &t.NodeID, &t.Type, &t.RemotePort, &t.Domain, &t.SpeedTest, &expires)
 	if err != nil || t.UserID != userID || !t.SpeedTest {
 		return ErrNotFound
 	}
@@ -477,16 +499,107 @@ func (s *SQLStore) FinishSpeedTestTunnel(userID int64, tunnelID int64) error {
 		return err
 	}
 	if t.RemotePort > 0 {
-		if _, err := tx.Exec(`DELETE FROM port_allocations WHERE protocol=$1 AND port=$2`, t.Type, t.RemotePort); err != nil {
+		if _, err := tx.Exec(`DELETE FROM port_allocations WHERE node_id=$1 AND protocol=$2 AND port=$3`, t.NodeID, t.Type, t.RemotePort); err != nil {
+			return err
+		}
+	}
+	if t.Domain != "" {
+		if _, err := tx.Exec(`UPDATE tunnels SET domain=NULL WHERE id=$1 AND status='deleted'`, tunnelID); err != nil {
 			return err
 		}
 	}
 	return tx.Commit()
 }
 
-func (s *SQLStore) allocateSQLPort(tx *sql.Tx, protocol string, start, end int) (int, error) {
+func (s *SQLStore) UpdateTunnelStatus(userID int64, tunnelID int64, status string) (Tunnel, error) {
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status != "active" && status != "disabled" {
+		return Tunnel{}, fmt.Errorf("unsupported tunnel status")
+	}
+	if status == "active" {
+		sub, err := s.Subscription(userID)
+		if err != nil || sub.Status != "active" {
+			return Tunnel{}, ErrForbidden
+		}
+		if sub.TrafficLimitBytes > 0 && sub.TrafficUsedBytes >= sub.TrafficLimitBytes {
+			return Tunnel{}, ErrForbidden
+		}
+	}
+	res, err := s.db.Exec(`UPDATE tunnels SET status=$3,updated_at=now() WHERE id=$1 AND user_id=$2 AND speed_test=false AND status <> 'deleted'`, tunnelID, userID, status)
+	if err != nil {
+		return Tunnel{}, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return Tunnel{}, ErrNotFound
+	}
+	rows := s.queryTunnels(`WHERE user_id=$1 AND id=$2 LIMIT 1`, userID, tunnelID)
+	if len(rows) == 0 {
+		return Tunnel{}, ErrNotFound
+	}
+	return rows[0], nil
+}
+
+func (s *SQLStore) DeleteTunnel(userID int64, tunnelID int64) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var t Tunnel
+	err = tx.QueryRow(`SELECT id,user_id,coalesce(node_id,0),type,coalesce(remote_port,0),coalesce(domain,''),status FROM tunnels WHERE id=$1 FOR UPDATE`, tunnelID).Scan(&t.ID, &t.UserID, &t.NodeID, &t.Type, &t.RemotePort, &t.Domain, &t.Status)
+	if err != nil || t.UserID != userID || t.Status == "deleted" {
+		return ErrNotFound
+	}
+	if _, err := tx.Exec(`UPDATE tunnels SET status='deleted',domain=NULL,updated_at=now() WHERE id=$1`, tunnelID); err != nil {
+		return err
+	}
+	if t.RemotePort > 0 {
+		if _, err := tx.Exec(`DELETE FROM port_allocations WHERE node_id=$1 AND protocol=$2 AND port=$3`, t.NodeID, t.Type, t.RemotePort); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (s *SQLStore) CleanupExpiredSpeedTestTunnels(now time.Time) int {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0
+	}
+	defer tx.Rollback()
+	rows, err := tx.Query(`SELECT id,coalesce(node_id,0),type,coalesce(remote_port,0) FROM tunnels WHERE speed_test=true AND status <> 'deleted' AND expires_at IS NOT NULL AND expires_at < $1 FOR UPDATE`, now)
+	if err != nil {
+		return 0
+	}
+	type expiredTunnel struct {
+		id     int64
+		nodeID int64
+		typ    string
+		port   int
+	}
+	expired := []expiredTunnel{}
+	for rows.Next() {
+		var item expiredTunnel
+		if err := rows.Scan(&item.id, &item.nodeID, &item.typ, &item.port); err == nil {
+			expired = append(expired, item)
+		}
+	}
+	_ = rows.Close()
+	for _, item := range expired {
+		_, _ = tx.Exec(`UPDATE tunnels SET status='deleted',domain=NULL,updated_at=now() WHERE id=$1`, item.id)
+		if item.port > 0 {
+			_, _ = tx.Exec(`DELETE FROM port_allocations WHERE node_id=$1 AND protocol=$2 AND port=$3`, item.nodeID, item.typ, item.port)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0
+	}
+	return len(expired)
+}
+
+func (s *SQLStore) allocateSQLPort(tx *sql.Tx, nodeID int64, protocol string, start, end int) (int, error) {
 	for p := start; p <= end; p++ {
-		_, err := tx.Exec(`INSERT INTO port_allocations (protocol,port,status) VALUES ($1,$2,'allocated')`, protocol, p)
+		_, err := tx.Exec(`INSERT INTO port_allocations (node_id,protocol,port,status) VALUES ($1,$2,$3,'allocated')`, nodeID, protocol, p)
 		if err == nil {
 			return p, nil
 		}
@@ -562,10 +675,18 @@ func (s *SQLStore) CreateNode(node Node) (Node, error) {
 		node.Status = "pending"
 	}
 	if node.BindToken == "" {
-		node.BindToken = fmt.Sprintf("node-bind-%d", time.Now().UnixNano())
+		token, err := randomToken("node-bind")
+		if err != nil {
+			return Node{}, err
+		}
+		node.BindToken = token
 	}
 	if node.AgentToken == "" {
-		node.AgentToken = fmt.Sprintf("node-agent-%d", time.Now().UnixNano())
+		token, err := randomToken("node-agent")
+		if err != nil {
+			return Node{}, err
+		}
+		node.AgentToken = token
 	}
 	return scanNode(s.db.QueryRow(`INSERT INTO nodes (name,agent_url,agent_token,bind_token,public_url,frp_entry_domain,server_addr,frp_server_port,tcp_port_start,tcp_port_end,udp_port_start,udp_port_end,status)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
@@ -747,12 +868,12 @@ func (s *SQLStore) UpdateUser(id int64, status string, planID int64) (User, Subs
 		now := time.Now()
 		expires := now.AddDate(0, 0, p.DurationDays)
 		_, _ = tx.Exec(`UPDATE subscriptions SET status='replaced', updated_at=now() WHERE user_id=$1 AND status='active'`, id)
-		if _, err := tx.Exec(`INSERT INTO subscriptions (user_id,plan_id,starts_at,expires_at,traffic_limit_bytes,bandwidth_limit_kbps,status) VALUES ($1,$2,$3,$4,$5,$6,'active')`, id, p.ID, now, expires, p.TrafficLimitBytes, p.BandwidthKbps); err != nil {
+		if _, err := tx.Exec(`INSERT INTO subscriptions (user_id,plan_id,plan_name,starts_at,expires_at,traffic_limit_bytes,bandwidth_limit_kbps,allow_tcp,allow_udp,allow_http,allow_https,allow_custom_domain,allow_auto_cert,max_tunnels,max_tcp_tunnels,max_udp_tunnels,max_http_tunnels,max_https_tunnels,max_domains,status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'active')`, id, p.ID, p.Name, now, expires, p.TrafficLimitBytes, p.BandwidthKbps, p.AllowTCP, p.AllowUDP, p.AllowHTTP, p.AllowHTTPS, p.AllowCustomDomain, p.AllowAutoCert, p.MaxTunnels, p.MaxTCPTunnels, p.MaxUDPTunnels, p.MaxHTTPTunnels, p.MaxHTTPSTunnels, p.MaxDomains); err != nil {
 			return User{}, Subscription{}, err
 		}
 		sub = planToSub(id, p, expires)
 	} else {
-		_ = tx.QueryRow(`SELECT p.id,p.name,coalesce(p.description,''),p.price_cents,p.duration_days,sub.traffic_limit_bytes,sub.bandwidth_limit_kbps,p.max_tunnels,p.max_tcp_tunnels,p.max_udp_tunnels,p.max_http_tunnels,p.max_https_tunnels,p.allow_tcp,p.allow_udp,p.allow_http,p.allow_https,p.allow_custom_domain,p.max_domains,p.allow_auto_cert,sub.status,sub.expires_at,sub.traffic_used_bytes FROM subscriptions sub JOIN plans p ON p.id=sub.plan_id WHERE sub.user_id=$1 AND sub.status='active' ORDER BY sub.expires_at DESC LIMIT 1`, id).Scan(&sub.PlanID, &sub.PlanName, new(string), new(int64), new(int), &sub.TrafficLimitBytes, &sub.BandwidthKbps, &sub.MaxTunnels, &sub.MaxTCPTunnels, &sub.MaxUDPTunnels, &sub.MaxHTTPTunnels, &sub.MaxHTTPSTunnels, &sub.AllowTCP, &sub.AllowUDP, &sub.AllowHTTP, &sub.AllowHTTPS, &sub.AllowCustomDomain, &sub.MaxDomains, &sub.AllowAutoCert, &sub.Status, &sub.ExpiresAt, &sub.TrafficUsedBytes)
+		_ = tx.QueryRow(`SELECT plan_id,coalesce(nullif(plan_name,''),'plan'),traffic_limit_bytes,traffic_used_bytes,bandwidth_limit_kbps,allow_tcp,allow_udp,allow_http,allow_https,allow_custom_domain,allow_auto_cert,max_tunnels,max_tcp_tunnels,max_udp_tunnels,max_http_tunnels,max_https_tunnels,max_domains,status,expires_at FROM subscriptions WHERE user_id=$1 AND status='active' ORDER BY expires_at DESC LIMIT 1`, id).Scan(&sub.PlanID, &sub.PlanName, &sub.TrafficLimitBytes, &sub.TrafficUsedBytes, &sub.BandwidthKbps, &sub.AllowTCP, &sub.AllowUDP, &sub.AllowHTTP, &sub.AllowHTTPS, &sub.AllowCustomDomain, &sub.AllowAutoCert, &sub.MaxTunnels, &sub.MaxTCPTunnels, &sub.MaxUDPTunnels, &sub.MaxHTTPTunnels, &sub.MaxHTTPSTunnels, &sub.MaxDomains, &sub.Status, &sub.ExpiresAt)
 		sub.UserID = id
 	}
 	if err := tx.Commit(); err != nil {
@@ -922,15 +1043,15 @@ func (s *SQLStore) SaveCertificate(record CertificateRecord) (CertificateRecord,
 		return CertificateRecord{}, fmt.Errorf("domain required")
 	}
 	record.Domain = domain
-	err := s.db.QueryRow(`INSERT INTO certificates (domain,status,issued_at,expires_at,cert_path,key_path,last_command,last_output,error_message)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-ON CONFLICT (domain) DO UPDATE SET status=excluded.status, issued_at=excluded.issued_at, expires_at=excluded.expires_at, cert_path=excluded.cert_path, key_path=excluded.key_path, last_command=excluded.last_command, last_output=excluded.last_output, error_message=excluded.error_message, updated_at=now()
-RETURNING id,domain,status,issued_at,expires_at,coalesce(cert_path,''),coalesce(key_path,''),coalesce(last_command,''),coalesce(last_output,''),coalesce(error_message,''),created_at,updated_at`, record.Domain, record.Status, record.IssuedAt, record.ExpiresAt, record.CertPath, record.KeyPath, record.LastCommand, record.LastOutput, record.ErrorMessage).Scan(&record.ID, &record.Domain, &record.Status, &record.IssuedAt, &record.ExpiresAt, &record.CertPath, &record.KeyPath, &record.LastCommand, &record.LastOutput, &record.ErrorMessage, &record.CreatedAt, &record.UpdatedAt)
+	err := s.db.QueryRow(`INSERT INTO certificates (user_id,domain,status,issued_at,expires_at,cert_path,key_path,last_command,last_output,error_message)
+VALUES (NULLIF($1,0),$2,$3,$4,$5,$6,$7,$8,$9,$10)
+ON CONFLICT (domain) DO UPDATE SET user_id=COALESCE(excluded.user_id,certificates.user_id), status=excluded.status, issued_at=excluded.issued_at, expires_at=excluded.expires_at, cert_path=excluded.cert_path, key_path=excluded.key_path, last_command=excluded.last_command, last_output=excluded.last_output, error_message=excluded.error_message, updated_at=now()
+RETURNING id,coalesce(user_id,0),domain,status,issued_at,expires_at,coalesce(cert_path,''),coalesce(key_path,''),coalesce(last_command,''),coalesce(last_output,''),coalesce(error_message,''),created_at,updated_at`, record.UserID, record.Domain, record.Status, record.IssuedAt, record.ExpiresAt, record.CertPath, record.KeyPath, record.LastCommand, record.LastOutput, record.ErrorMessage).Scan(&record.ID, &record.UserID, &record.Domain, &record.Status, &record.IssuedAt, &record.ExpiresAt, &record.CertPath, &record.KeyPath, &record.LastCommand, &record.LastOutput, &record.ErrorMessage, &record.CreatedAt, &record.UpdatedAt)
 	return record, err
 }
 
 func (s *SQLStore) Certificates() []CertificateRecord {
-	rows, err := s.db.Query(`SELECT id,domain,status,issued_at,expires_at,coalesce(cert_path,''),coalesce(key_path,''),coalesce(last_command,''),coalesce(last_output,''),coalesce(error_message,''),created_at,updated_at FROM certificates ORDER BY updated_at DESC LIMIT 500`)
+	rows, err := s.db.Query(`SELECT id,coalesce(user_id,0),domain,status,issued_at,expires_at,coalesce(cert_path,''),coalesce(key_path,''),coalesce(last_command,''),coalesce(last_output,''),coalesce(error_message,''),created_at,updated_at FROM certificates ORDER BY updated_at DESC LIMIT 500`)
 	if err != nil {
 		return nil
 	}
@@ -940,7 +1061,7 @@ func (s *SQLStore) Certificates() []CertificateRecord {
 		var cert CertificateRecord
 		var issued sql.NullTime
 		var expires sql.NullTime
-		_ = rows.Scan(&cert.ID, &cert.Domain, &cert.Status, &issued, &expires, &cert.CertPath, &cert.KeyPath, &cert.LastCommand, &cert.LastOutput, &cert.ErrorMessage, &cert.CreatedAt, &cert.UpdatedAt)
+		_ = rows.Scan(&cert.ID, &cert.UserID, &cert.Domain, &cert.Status, &issued, &expires, &cert.CertPath, &cert.KeyPath, &cert.LastCommand, &cert.LastOutput, &cert.ErrorMessage, &cert.CreatedAt, &cert.UpdatedAt)
 		if issued.Valid {
 			cert.IssuedAt = &issued.Time
 		}

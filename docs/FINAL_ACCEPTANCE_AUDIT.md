@@ -47,3 +47,32 @@ Generated: 2026-07-03T00:22:03+08:00
 
 - **Real frpc binaries:** Packaging supports `FRPC_WINDOWS_PATH`/`FRPC_LINUX_PATH` and `FRPC_WINDOWS_URL`/`FRPC_LINUX_URL` to include official frpc binaries without vendoring them in git.
 - **Real production reload commands:** Nginx/frps command hooks are configurable but default to no-op for safe deployment.
+
+
+## 2026-07-09 Security Remediation Acceptance
+
+Evidence collected on 2026-07-09:
+
+- `ALLOW_INSECURE_DEFAULTS=true GOPROXY=direct go test ./apps/api-server/...` passed.
+- `go test ./client/frp-client/...` passed.
+- Extracted inline scripts from `apps/admin-web/index.html`, `apps/user-web/index.html`, `apps/user-web/workbench.html`, and `apps/client-webui/index.html`; all passed `node --check`.
+- `docker compose --env-file .env.example config` passed.
+- `docker compose --env-file .env.control.example -f docker-compose.control.yml config` passed.
+- `docker compose --env-file .env.node.example -f docker-compose.node.yml config` passed.
+
+Requirement status:
+
+| Requirement | Status |
+|---|---|
+| ???????token ??? | PASS |
+| ???? token ????????????? | PASS |
+| ????? API `X-Local-Token` ? CORS ?? | PASS |
+| node-agent ? token fail closed | PASS |
+| ????????????????? | PASS |
+| frps token ????? `change-me` | PASS |
+| ?? DoS ????????? | PASS |
+| ???????????? | PASS |
+| ???? start/stop/delete ????? | PASS |
+| Admin/User/Client WebUI ?????? | PASS |
+
+Residual risk: frps ?? token ????????? `docs/SECURITY.md` ??????? frps ?????????????????

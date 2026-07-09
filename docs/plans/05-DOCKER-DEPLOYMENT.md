@@ -35,12 +35,12 @@ FRP_ENTRY_DOMAIN=frp.example.com
 
 POSTGRES_DB=frp_platform
 POSTGRES_USER=frp_platform
-POSTGRES_PASSWORD=change-me
+POSTGRES_PASSWORD=replace-with-strong-postgres-password
 
-REDIS_PASSWORD=change-me
+REDIS_PASSWORD=replace-with-strong-redis-password
 
 FRP_BIND_PORT=7000
-FRP_TOKEN=change-me
+FRP_TOKEN=replace-with-random-32-byte-frp-token
 FRP_VHOST_HTTP_PORT=8080
 
 TCP_PORT_START=20000
@@ -158,7 +158,7 @@ services:
 ```toml
 bindPort = 7000
 auth.method = "token"
-auth.token = "change-me"
+auth.token = "__REPLACE_WITH_FRP_TOKEN__"
 
 vhostHTTPPort = 8080
 

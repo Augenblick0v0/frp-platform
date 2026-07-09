@@ -11,216 +11,154 @@
     <aside class="side">
       <div class="brand"><div class="logo"></div>FRP Client</div>
       <nav class="nav">
-        <a class="active">连接状态</a>
-        <a>隧道测速</a>
-        <a>日志</a>
-        <a>订阅</a>
-        <a>设置</a>
+        <a class="active">????</a><a>??</a><a>??</a><a>??</a><a>??</a>
       </nav>
     </aside>
     <main class="main">
       <div class="top">
-        <div>
-          <div class="eyebrow">Local WebUI</div>
-          <h1 class="title">客户端控制台</h1>
-          <p class="subtitle">同步配置、启动 frpc、测试 TCP / UDP / HTTP / HTTPS 隧道速度。</p>
-        </div>
-        <div class="actions">
-          <button class="btn secondary" id="stopBtn">停止</button>
-          <button class="btn primary" id="startBtn">启动 frpc</button>
-        </div>
+        <div><div class="eyebrow">Local WebUI</div><h1 class="title">??????</h1><p class="subtitle">???????????????????????? frpc?</p></div>
+        <div class="actions"><button class="btn secondary" id="stopBtn">??</button><button class="btn primary" id="startBtn">?? frpc</button></div>
       </div>
 
       <section class="grid cards">
-        <div class="card"><div class="label">本地 API</div><div class="metric">正常</div><span class="badge green" id="apiBadge">online</span></div>
-        <div class="card"><div class="label">frpc</div><div class="metric" id="frpcState">未知</div><span class="badge orange" id="frpcBadge">checking</span></div>
+        <div class="card"><div class="label">?? API</div><div class="metric">??</div><span class="badge green" id="apiBadge">online</span></div>
+        <div class="card"><div class="label">frpc</div><div class="metric" id="frpcState">??</div><span class="badge orange" id="frpcBadge">checking</span></div>
         <div class="card"><div class="label">PID</div><div class="metric" id="pid">-</div><span class="badge blue">process</span></div>
-        <div class="card"><div class="label">配置文件</div><div class="label path" id="configPath">-</div><span class="badge green">toml</span></div>
+        <div class="card"><div class="label">?? API Token</div><div class="label path" id="localToken">loading...</div><button class="btn secondary" id="copyLocalTokenBtn">??</button></div>
       </section>
 
       <section class="split" style="margin-top:16px">
         <div class="card">
-          <h2>服务端连接</h2>
+          <h2>??????</h2>
           <div class="form">
-            <input class="input" id="apiBase" placeholder="API 地址，例如 https://api.example.com">
-            <input class="input" id="token" placeholder="登录 Token">
-            <button class="btn primary" id="syncBtn">同步并生成 frpc.toml</button>
+            <input class="input" id="apiBase" placeholder="API ????? https://api.example.com">
+            <input class="input" id="loginEmail" placeholder="??">
+            <input class="input" id="loginPassword" type="password" placeholder="??">
+            <div class="speed-grid">
+              <input class="input" id="loginCode" placeholder="?????">
+              <button class="btn secondary" id="sendCodeBtn">???????</button>
+              <button class="btn primary" id="registerBtn">??</button>
+              <button class="btn primary" id="loginBtn">??</button>
+            </div>
+            <input class="input" id="token" placeholder="???? Token">
           </div>
 
-          <h2>隧道测速</h2>
+          <h2>?????</h2>
           <div class="speed-grid">
-            <label>协议
-              <select class="input" id="speedType">
-                <option value="tcp">TCP</option>
-                <option value="udp">UDP</option>
-                <option value="http">HTTP</option>
-                <option value="https">HTTPS</option>
-              </select>
-            </label>
-            <label>下载大小 bytes
-              <input class="input" id="downloadBytes" value="8388608">
-            </label>
-            <label>上传大小 bytes
-              <input class="input" id="uploadBytes" value="8388608">
-            </label>
-            <label>持续秒数
-              <input class="input" id="durationSeconds" value="15">
-            </label>
-            <label>隧道限速 Mbps
-              <input class="input" id="speedLimit" value="0" min="0" step="0.001" placeholder="0 表示继承套餐限速">
-              <span class="field-hint" id="speedLimitHint">0 表示继承套餐限速</span>
-            </label>
+            <input class="input" id="redeemCode" placeholder="???">
+            <button class="btn secondary" id="redeemBtn">????</button>
           </div>
-          <div class="hint">测速会创建临时隧道，产生的流量会计入当前套餐。隧道限速不能超过套餐限速。</div>
-          <button class="btn secondary" id="speedTestBtn">开始测速</button>
-          <div class="result-grid" id="speedResult">
-            <div><span>下载平均</span><strong>-</strong></div>
-            <div><span>下载峰值</span><strong>-</strong></div>
-            <div><span>上传平均</span><strong>-</strong></div>
-            <div><span>上传峰值</span><strong>-</strong></div>
-            <div><span>延迟</span><strong>-</strong></div>
-            <div><span>限速对比</span><strong>-</strong></div>
+          <div class="speed-grid">
+            <input class="input" id="tunnelName" value="web" placeholder="????">
+            <select class="input" id="tunnelType"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="tcp">TCP</option><option value="udp">UDP</option></select>
+            <input class="input" id="localHost" value="127.0.0.1" placeholder="????">
+            <input class="input" id="localPort" value="8080" placeholder="????">
+            <input class="input" id="domain" placeholder="HTTP/HTTPS ??">
+            <input class="input" id="bandwidthLimit" value="0" placeholder="???? Mbps?0 ????">
           </div>
+          <button class="btn secondary" id="createTunnelBtn">??????</button>
 
-          <h2>手动流量上报</h2>
-          <input class="input" id="reportTunnelId" placeholder="隧道 ID">
-          <input class="input" id="bytesIn" value="1024" placeholder="入站 bytes">
-          <input class="input" id="bytesOut" value="2048" placeholder="出站 bytes">
-          <button class="btn secondary" id="reportTrafficBtn">上报到服务端</button>
+          <h2>????</h2>
+          <button class="btn primary" id="syncBtn">????? frpc.toml</button>
+
+          <h2>????</h2>
+          <div class="speed-grid">
+            <select class="input" id="speedType"><option value="tcp">TCP</option><option value="udp">UDP</option><option value="http">HTTP</option><option value="https">HTTPS</option></select>
+            <input class="input" id="downloadBytes" value="8388608" placeholder="?? bytes">
+            <input class="input" id="uploadBytes" value="8388608" placeholder="?? bytes">
+            <input class="input" id="durationSeconds" value="15" placeholder="????">
+          </div>
+          <div class="hint">????????????? API ??????? X-Local-Token?</div>
+          <button class="btn secondary" id="speedTestBtn">????</button>
+          <div class="result-grid" id="speedResult"><div><span>????</span><strong>-</strong></div><div><span>????</span><strong>-</strong></div><div><span>????</span><strong>-</strong></div><div><span>????</span><strong>-</strong></div><div><span>??</span><strong>-</strong></div><div><span>????</span><strong>-</strong></div></div>
+
+          <h2>??????</h2>
+          <input class="input" id="reportTunnelId" placeholder="?? ID">
+          <input class="input" id="bytesIn" value="1024" placeholder="?? bytes">
+          <input class="input" id="bytesOut" value="2048" placeholder="?? bytes">
+          <button class="btn secondary" id="reportTrafficBtn">??????</button>
         </div>
-        <div class="card">
-          <h2>运行日志</h2>
-          <div class="log" id="logs">loading...</div>
-        </div>
+        <div class="card"><h2>????</h2><div class="log" id="logs">loading...</div></div>
       </section>
     </main>
   </div>
 <script>
+let localToken = '';
+let remoteToken = localStorage.getItem('remoteToken') || '';
+const $ = id => document.getElementById(id);
+
+function setRemoteToken(token) {
+  remoteToken = token || '';
+  localStorage.setItem('remoteToken', remoteToken);
+  $('token').value = remoteToken;
+}
+function remoteBase() { return $('apiBase').value.replace(/\/$/, ''); }
+function num(id) { return Number($(id).value) || 0; }
+function log(msg) { $('logs').textContent = typeof msg === 'string' ? msg : JSON.stringify(msg, null, 2); }
+
 async function api(path, opts = {}) {
-  const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
-  return await r.json();
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+  if (localToken && path !== '/api/local-token') headers['X-Local-Token'] = localToken;
+  const r = await fetch(path, { ...opts, headers });
+  const j = await r.json().catch(() => ({ success: false, message: r.statusText }));
+  if (!r.ok || j.success === false) throw new Error(j.message || r.statusText);
+  return j;
+}
+async function remote(path, opts = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+  if (remoteToken) headers.Authorization = 'Bearer ' + remoteToken;
+  const r = await fetch(remoteBase() + path, { ...opts, headers });
+  const j = await r.json().catch(() => ({ success: false, message: r.statusText }));
+  if (!r.ok || j.success === false) throw new Error(j.message || r.statusText);
+  return j.data;
 }
 function setBadge(el, text, cls) { el.textContent = text; el.className = 'badge ' + cls; }
-function num(id) { return Number(document.getElementById(id).value) || 0; }
-function mbpsToKbps(v) {
-  if (!v || v < 0) return 0;
-  return Math.round(v * 1000);
-}
-function fmtMbpsFromKbps(v) {
-  if (!v || v < 0) return '-';
-  return (v / 1000).toFixed(2) + ' Mbps';
-}
-function fmtMBpsFromKbps(v) {
-  if (!v || v < 0) return '-';
-  return (v / 8000).toFixed(2) + ' MB/s';
-}
-function fmtRate(v) {
-  if (!v || v < 0) return '-';
-  return fmtMbpsFromKbps(v) + '\n≈ ' + fmtMBpsFromKbps(v);
-}
-function updateSpeedLimitHint() {
-  const limit = num('speedLimit');
-  document.getElementById('speedLimitHint').textContent = limit > 0 ? '≈ ' + (limit / 8).toFixed(3) + ' MB/s' : '0 表示继承套餐限速';
-}
+function mbpsToKbps(v) { return !v || v < 0 ? 0 : Math.round(v * 1000); }
+function fmtMbps(v) { return !v || v < 0 ? '-' : (v / 1000).toFixed(2) + ' Mbps'; }
+function fmtRate(v) { return fmtMbps(v); }
 function setResult(items) {
   const cells = document.querySelectorAll('#speedResult strong');
   cells[0].textContent = fmtRate(items.download_average_kbps);
   cells[1].textContent = fmtRate(items.download_peak_kbps);
   cells[2].textContent = fmtRate(items.upload_average_kbps);
   cells[3].textContent = fmtRate(items.upload_peak_kbps);
-  cells[4].textContent = items.latency_ms || items.latency_ms === 0 ? items.latency_ms.toFixed(1) + ' ms' : '-';
-  if (items.effective_bandwidth_limit_kbps > 0) {
-    const pct = (items.limit_ratio * 100).toFixed(0);
-    cells[5].textContent = pct + '% of ' + fmtMbpsFromKbps(items.effective_bandwidth_limit_kbps) + '\n≈ ' + fmtMBpsFromKbps(items.effective_bandwidth_limit_kbps);
-  } else {
-    cells[5].textContent = '未限速';
-  }
+  cells[4].textContent = (items.latency_ms || items.latency_ms === 0) ? items.latency_ms.toFixed(1) + ' ms' : '-';
+  cells[5].textContent = items.effective_bandwidth_limit_kbps > 0 ? (items.limit_ratio * 100).toFixed(0) + '% of ' + fmtMbps(items.effective_bandwidth_limit_kbps) : '-';
 }
-function speedSummary(items) {
-  const lines = [
-    '测速完成',
-    '下载平均：' + fmtRate(items.download_average_kbps).replace('\n', ' '),
-    '下载峰值：' + fmtRate(items.download_peak_kbps).replace('\n', ' '),
-    '上传平均：' + fmtRate(items.upload_average_kbps).replace('\n', ' '),
-    '上传峰值：' + fmtRate(items.upload_peak_kbps).replace('\n', ' '),
-    '延迟：' + (items.latency_ms || items.latency_ms === 0 ? items.latency_ms.toFixed(1) + ' ms' : '-')
-  ];
-  if (items.effective_bandwidth_limit_kbps > 0) {
-    lines.push('限速对比：' + (items.limit_ratio * 100).toFixed(0) + '% of ' + fmtMbpsFromKbps(items.effective_bandwidth_limit_kbps) + ' ≈ ' + fmtMBpsFromKbps(items.effective_bandwidth_limit_kbps));
-  } else {
-    lines.push('限速对比：未限速');
-  }
-  return lines.join('\n');
+async function loadLocalToken() {
+  const res = await fetch('/api/local-token');
+  const json = await res.json();
+  localToken = json.data?.token || '';
+  $('localToken').textContent = localToken || '-';
 }
 async function refresh() {
   try {
     const res = await api('/api/status');
     const st = res.data;
-    document.getElementById('frpcState').textContent = st.running ? '运行中' : '停止';
-    document.getElementById('pid').textContent = st.pid || '-';
-    document.getElementById('configPath').textContent = st.config_path;
-    setBadge(document.getElementById('frpcBadge'), st.running ? 'running' : 'stopped', st.running ? 'green' : 'red');
+    $('frpcState').textContent = st.running ? '???' : '??';
+    $('pid').textContent = st.pid || '-';
+    setBadge($('frpcBadge'), st.running ? 'running' : 'stopped', st.running ? 'green' : 'red');
     const logs = await api('/api/logs');
-    document.getElementById('logs').textContent = logs.data.logs || '[empty]';
-  } catch (e) {
-    setBadge(document.getElementById('apiBadge'), 'offline', 'red');
-  }
+    log(logs.data.logs || '[empty]');
+  } catch (e) { setBadge($('apiBadge'), 'offline', 'red'); }
 }
-document.getElementById('syncBtn').onclick = async () => {
-  const apiBase = document.getElementById('apiBase').value;
-  const token = document.getElementById('token').value;
-  const res = await api('/api/config/sync', { method: 'POST', body: JSON.stringify({ api_base: apiBase, token }) });
-  document.getElementById('logs').textContent = JSON.stringify(res, null, 2);
-  refresh();
-};
-document.getElementById('speedTestBtn').onclick = async () => {
-  const btn = document.getElementById('speedTestBtn');
-  btn.disabled = true;
-  btn.textContent = '测速中...';
-  const payload = {
-    api_base: document.getElementById('apiBase').value,
-    token: document.getElementById('token').value,
-    type: document.getElementById('speedType').value,
-    download_bytes: num('downloadBytes'),
-    upload_bytes: num('uploadBytes'),
-    duration_seconds: num('durationSeconds'),
-    bandwidth_limit_kbps: mbpsToKbps(num('speedLimit'))
-  };
-  try {
-    const res = await api('/api/speed-tests/run', { method: 'POST', body: JSON.stringify(payload) });
-    if (res.success) {
-      setResult(res.data);
-      document.getElementById('logs').textContent = speedSummary(res.data);
-    } else {
-      document.getElementById('logs').textContent = JSON.stringify(res, null, 2);
-    }
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '开始测速';
-    refresh();
-  }
-};
-document.getElementById('startBtn').onclick = async () => {
-  const res = await api('/api/frpc/start', { method: 'POST' });
-  document.getElementById('logs').textContent = JSON.stringify(res, null, 2);
-  refresh();
-};
-document.getElementById('stopBtn').onclick = async () => {
-  const res = await api('/api/frpc/stop', { method: 'POST' });
-  document.getElementById('logs').textContent = JSON.stringify(res, null, 2);
-  refresh();
-};
-document.getElementById('reportTrafficBtn').onclick = async () => {
-  const apiBase = document.getElementById('apiBase').value;
-  const token = document.getElementById('token').value;
-  const report = { tunnel_id: num('reportTunnelId'), bytes_in: num('bytesIn'), bytes_out: num('bytesOut') };
-  const res = await api('/api/traffic/report', { method: 'POST', body: JSON.stringify({ api_base: apiBase, token, reports: [report] }) });
-  document.getElementById('logs').textContent = JSON.stringify(res, null, 2);
-  refresh();
-};
-document.getElementById('speedLimit').addEventListener('input', updateSpeedLimitHint);
-updateSpeedLimitHint();
-refresh();
+
+$('copyLocalTokenBtn').onclick = async () => { await navigator.clipboard.writeText(localToken); log('?? API Token ???'); };
+$('sendCodeBtn').onclick = async () => { await remote('/api/auth/send-email-code', { method: 'POST', body: JSON.stringify({ email: $('loginEmail').value, purpose: 'register' }) }); log('????????????'); };
+$('registerBtn').onclick = async () => { await remote('/api/auth/register', { method: 'POST', body: JSON.stringify({ email: $('loginEmail').value, password: $('loginPassword').value, code: $('loginCode').value }) }); log('????????'); };
+$('loginBtn').onclick = async () => { const data = await remote('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: $('loginEmail').value, password: $('loginPassword').value }) }); setRemoteToken(data.access_token); log('????'); };
+$('redeemBtn').onclick = async () => { log(await remote('/api/user/redeem', { method: 'POST', body: JSON.stringify({ code: $('redeemCode').value }) })); };
+$('createTunnelBtn').onclick = async () => { log(await remote('/api/tunnels', { method: 'POST', body: JSON.stringify({ name: $('tunnelName').value, type: $('tunnelType').value, local_host: $('localHost').value, local_port: num('localPort'), domain: $('domain').value, use_https: $('tunnelType').value === 'https', bandwidth_limit_kbps: mbpsToKbps(num('bandwidthLimit')) }) })); };
+$('syncBtn').onclick = async () => { const res = await api('/api/config/sync', { method: 'POST', body: JSON.stringify({ api_base: remoteBase(), token: remoteToken }) }); log(res); refresh(); };
+$('speedTestBtn').onclick = async () => { const res = await api('/api/speed-tests/run', { method: 'POST', body: JSON.stringify({ api_base: remoteBase(), token: remoteToken, type: $('speedType').value, download_bytes: num('downloadBytes'), upload_bytes: num('uploadBytes'), duration_seconds: num('durationSeconds'), bandwidth_limit_kbps: 0 }) }); setResult(res.data); log(res.data); refresh(); };
+$('startBtn').onclick = async () => { log(await api('/api/frpc/start', { method: 'POST' })); refresh(); };
+$('stopBtn').onclick = async () => { log(await api('/api/frpc/stop', { method: 'POST' })); refresh(); };
+$('reportTrafficBtn').onclick = async () => { log(await api('/api/traffic/report', { method: 'POST', body: JSON.stringify({ api_base: remoteBase(), token: remoteToken, reports: [{ tunnel_id: num('reportTunnelId'), bytes_in: num('bytesIn'), bytes_out: num('bytesOut') }] }) })); refresh(); };
+
+$('apiBase').value = localStorage.getItem('apiBase') || '';
+$('apiBase').addEventListener('change', () => localStorage.setItem('apiBase', $('apiBase').value));
+setRemoteToken(remoteToken);
+loadLocalToken().then(refresh).catch(e => log(e.message));
 setInterval(refresh, 5000);
 </script>
 </body>

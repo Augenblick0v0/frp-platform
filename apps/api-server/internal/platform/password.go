@@ -45,8 +45,10 @@ func VerifyPassword(stored, password string) bool {
 		got := stretchPassword([]byte(password), salt, iterations)
 		return subtle.ConstantTimeCompare(got, want) == 1
 	}
-	// Backward-compatible for old dev rows created before hashing.
-	return subtle.ConstantTimeCompare([]byte(stored), []byte(password)) == 1
+	if getenv("ALLOW_LEGACY_PLAINTEXT_PASSWORDS", "false") == "true" {
+		return subtle.ConstantTimeCompare([]byte(stored), []byte(password)) == 1
+	}
+	return false
 }
 
 func stretchPassword(password, salt []byte, iterations int) []byte {

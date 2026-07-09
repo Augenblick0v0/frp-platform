@@ -2,7 +2,7 @@ bindPort = 7000
 vhostHTTPPort = 8080
 
 auth.method = "token"
-auth.token = "change-me"
+auth.token = "__REPLACE_WITH_FRP_TOKEN__"
 
 log.to = "/var/log/frp/frps.log"
 log.level = "info"

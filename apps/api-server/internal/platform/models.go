@@ -219,6 +219,7 @@ type AdminUser struct {
 
 type CertificateRecord struct {
 	ID           int64      `json:"id"`
+	UserID       int64      `json:"user_id,omitempty"`
 	Domain       string     `json:"domain"`
 	Status       string     `json:"status"`
 	IssuedAt     *time.Time `json:"issued_at,omitempty"`

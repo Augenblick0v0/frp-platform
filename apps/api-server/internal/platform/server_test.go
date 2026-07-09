@@ -22,10 +22,7 @@ func TestEpayCreateOrderAndNotifyActivatesPlan(t *testing.T) {
 	t.Setenv("PUBLIC_BASE_URL", "https://panel.example.com")
 	store := NewStore()
 	s := NewServer(store)
-	post(t, s, "/api/auth/send-email-code", map[string]any{"email": "pay@example.com", "purpose": "register"}, "")
-	post(t, s, "/api/auth/register", map[string]any{"email": "pay@example.com", "code": "123456", "password": "pass"}, "")
-	login := post(t, s, "/api/auth/login", map[string]any{"email": "pay@example.com", "password": "pass"}, "")
-	token := login["access_token"].(string)
+	token := registerTestUser(t, s, store, "pay@example.com", "pass")
 	plan, err := store.CreatePlan(Plan{Name: "Paid", DurationDays: 7, TrafficLimitBytes: 1024, BandwidthKbps: 1000, MaxTunnels: 1, AllowTCP: true, Status: "active", PriceCents: 990})
 	if err != nil {
 		t.Fatal(err)
@@ -62,7 +59,8 @@ func TestEpayNotifyRejectsBadSignature(t *testing.T) {
 	t.Setenv("EPAY_KEY", "test-secret")
 	store := NewStore()
 	store.SendEmailCode("badpay@example.com", "register")
-	if _, err := store.Register("badpay@example.com", "123456", "pass"); err != nil {
+	code := store.DebugEmailCode("badpay@example.com", "register")
+	if _, err := store.Register("badpay@example.com", code, "pass"); err != nil {
 		t.Fatal(err)
 	}
 	order, err := store.CreatePaymentOrder(PaymentOrder{UserID: 1, PlanID: 1, Provider: "epay", OutTradeNo: "FPTESTBAD", Name: "高级套餐", Money: "1.00", Status: "pending"})
@@ -90,15 +88,139 @@ func TestEpayNotifyRejectsBadSignature(t *testing.T) {
 }
 
 func TestUserRedeemAndCreateTCPTunnel(t *testing.T) {
-	s := NewServer(NewStore())
-	post(t, s, "/api/auth/send-email-code", map[string]any{"email": "u@example.com", "purpose": "register"}, "")
-	post(t, s, "/api/auth/register", map[string]any{"email": "u@example.com", "code": "123456", "password": "pass"}, "")
-	login := post(t, s, "/api/auth/login", map[string]any{"email": "u@example.com", "password": "pass"}, "")
-	token := login["access_token"].(string)
+	store := NewStore()
+	s := NewServer(store)
+	token := registerTestUser(t, s, store, "u@example.com", "pass")
 	post(t, s, "/api/user/redeem", map[string]any{"code": "DEMO-PLAN-2026"}, token)
 	created := post(t, s, "/api/tunnels", map[string]any{"name": "ssh", "type": "tcp", "local_host": "127.0.0.1", "local_port": 22}, token)
 	if created["remote_port"].(float64) != 20000 {
 		t.Fatalf("expected first tcp port 20000, got %#v", created["remote_port"])
+	}
+}
+
+func registerTestUser(t *testing.T, s *Server, store *Store, email, password string) string {
+	t.Helper()
+	post(t, s, "/api/auth/send-email-code", map[string]any{"email": email, "purpose": "register"}, "")
+	code := store.DebugEmailCode(email, "register")
+	post(t, s, "/api/auth/register", map[string]any{"email": email, "code": code, "password": password}, "")
+	login := post(t, s, "/api/auth/login", map[string]any{"email": email, "password": password}, "")
+	return login["access_token"].(string)
+}
+
+func TestSendEmailCodeDoesNotReturnDevCode(t *testing.T) {
+	s := NewServer(NewStore())
+	rr := request(t, s, "POST", "/api/auth/send-email-code", map[string]any{
+		"email": "secure@example.com", "purpose": "register",
+	}, "")
+	if rr.Code != 200 {
+		t.Fatalf("send code status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if strings.Contains(rr.Body.String(), "dev_code") || strings.Contains(rr.Body.String(), "123456") {
+		t.Fatalf("verification code leaked in response: %s", rr.Body.String())
+	}
+}
+
+func TestAuthTokensAreNotTimestampOnly(t *testing.T) {
+	store := NewStore()
+	s := NewServer(store)
+	token := registerTestUser(t, s, store, "token-random@example.com", "pass")
+	if strings.HasPrefix(token, "token-1-") || len(token) < 32 {
+		t.Fatalf("weak token generated: %q", token)
+	}
+}
+
+func TestDisabledUserTokenIsRejected(t *testing.T) {
+	store := NewStore()
+	s := NewServer(store)
+	token := registerTestUser(t, s, store, "disabled@example.com", "pass")
+	if _, _, err := store.UpdateUser(1, "disabled", 0); err != nil {
+		t.Fatal(err)
+	}
+	rr := request(t, s, "GET", "/api/auth/me", nil, token)
+	if rr.Code != 401 {
+		t.Fatalf("disabled token should be rejected, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestHTTPRequiresCustomDomainEntitlement(t *testing.T) {
+	store := NewStore()
+	s := NewServer(store)
+	token := registerTestUser(t, s, store, "domain-denied@example.com", "pass")
+	plan, err := store.CreatePlan(Plan{Name: "No Domain", DurationDays: 1, TrafficLimitBytes: 1024 * 1024, BandwidthKbps: 1000, MaxTunnels: 3, MaxHTTPTunnels: 3, AllowHTTP: true, AllowCustomDomain: false, Status: "active"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	codes, err := store.CreateRedeemCodes(plan.ID, 1, "NODOM")
+	if err != nil {
+		t.Fatal(err)
+	}
+	post(t, s, "/api/user/redeem", map[string]any{"code": codes[0].Code}, token)
+	rr := request(t, s, "POST", "/api/tunnels", map[string]any{"name": "web", "type": "http", "local_host": "127.0.0.1", "local_port": 8080, "domain": "app.example.com"}, token)
+	if rr.Code != 403 {
+		t.Fatalf("expected custom domain entitlement 403, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestRedeemCodeExpirationIsHonored(t *testing.T) {
+	store := NewStore()
+	s := NewServer(store)
+	token := registerTestUser(t, s, store, "expired-code@example.com", "pass")
+	expired := time.Now().Add(-time.Hour)
+	store.redeemCodes["OLD-CODE"] = RedeemCode{Code: "OLD-CODE", PlanID: 1, Status: "unused", ExpiresAt: &expired}
+	rr := request(t, s, "POST", "/api/user/redeem", map[string]any{"code": "OLD-CODE"}, token)
+	if rr.Code != 403 {
+		t.Fatalf("expected expired code 403, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestSamePortCanBeAllocatedOnDifferentNodes(t *testing.T) {
+	store := NewStore()
+	n1, _ := store.CreateNode(Node{Name: "n1", ServerAddr: "n1.example.com", TCPPortStart: 20000, TCPPortEnd: 20000})
+	n2, _ := store.CreateNode(Node{Name: "n2", ServerAddr: "n2.example.com", TCPPortStart: 20000, TCPPortEnd: 20000})
+	s := NewServer(store)
+	token1 := registerTestUser(t, s, store, "node1@example.com", "pass")
+	token2 := registerTestUser(t, s, store, "node2@example.com", "pass")
+	post(t, s, "/api/user/redeem", map[string]any{"code": "DEMO-PLAN-2026"}, token1)
+	codes, _ := store.CreateRedeemCodes(1, 1, "NODE2")
+	post(t, s, "/api/user/redeem", map[string]any{"code": codes[0].Code}, token2)
+	t1 := post(t, s, "/api/tunnels", map[string]any{"name": "ssh1", "type": "tcp", "local_host": "127.0.0.1", "local_port": 22, "node_id": n1.ID}, token1)
+	t2 := post(t, s, "/api/tunnels", map[string]any{"name": "ssh2", "type": "tcp", "local_host": "127.0.0.1", "local_port": 22, "node_id": n2.ID}, token2)
+	if t1["remote_port"].(float64) != 20000 || t2["remote_port"].(float64) != 20000 {
+		t.Fatalf("expected same port on different nodes, got %#v %#v", t1["remote_port"], t2["remote_port"])
+	}
+}
+
+func TestDeleteTunnelReleasesPort(t *testing.T) {
+	store := NewStore()
+	s := NewServer(store)
+	token := registerTestUser(t, s, store, "delete-port@example.com", "pass")
+	post(t, s, "/api/user/redeem", map[string]any{"code": "DEMO-PLAN-2026"}, token)
+	created := post(t, s, "/api/tunnels", map[string]any{"name": "one", "type": "tcp", "local_host": "127.0.0.1", "local_port": 22}, token)
+	id := int64(created["id"].(float64))
+	rr := request(t, s, "DELETE", fmt.Sprintf("/api/tunnels/%d", id), nil, token)
+	if rr.Code != 200 {
+		t.Fatalf("delete status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	again := post(t, s, "/api/tunnels", map[string]any{"name": "two", "type": "tcp", "local_host": "127.0.0.1", "local_port": 23}, token)
+	if again["remote_port"].(float64) != created["remote_port"].(float64) {
+		t.Fatalf("expected released port reuse, first=%#v second=%#v", created["remote_port"], again["remote_port"])
+	}
+}
+
+func TestSpeedProbeRejectsHugePayload(t *testing.T) {
+	if _, err := normalizeSpeedProbeBytes(1<<40, defaultSpeedProbeBytes); err == nil {
+		t.Fatal("expected huge speed payload to be rejected")
+	}
+}
+
+func TestClientTunnelsRejectsDefaultFRPToken(t *testing.T) {
+	t.Setenv("FRP_TOKEN", "")
+	store := NewStore()
+	s := NewServer(store)
+	token := registerTestUser(t, s, store, "no-frp-token@example.com", "pass")
+	rr := request(t, s, "GET", "/api/client/tunnels", nil, token)
+	if rr.Code != 500 {
+		t.Fatalf("expected missing frp token 500, got %d body=%s", rr.Code, rr.Body.String())
 	}
 }
 
@@ -128,10 +250,7 @@ func post(t *testing.T, s *Server, path string, body map[string]any, token strin
 func TestTrafficReportingAndPlanLimit(t *testing.T) {
 	store := NewStore()
 	s := NewServer(store)
-	post(t, s, "/api/auth/send-email-code", map[string]any{"email": "limit@example.com", "purpose": "register"}, "")
-	post(t, s, "/api/auth/register", map[string]any{"email": "limit@example.com", "code": "123456", "password": "pass"}, "")
-	login := post(t, s, "/api/auth/login", map[string]any{"email": "limit@example.com", "password": "pass"}, "")
-	token := login["access_token"].(string)
+	token := registerTestUser(t, s, store, "limit@example.com", "pass")
 	plan, err := store.CreatePlan(Plan{Name: "小流量", DurationDays: 1, TrafficLimitBytes: 100, BandwidthKbps: 1000, MaxTunnels: 1, AllowTCP: true, Status: "active"})
 	if err != nil {
 		t.Fatal(err)
@@ -159,10 +278,7 @@ func TestTrafficReportingAndPlanLimit(t *testing.T) {
 func TestTunnelBandwidthOverrideCannotExceedPlanLimit(t *testing.T) {
 	store := NewStore()
 	s := NewServer(store)
-	post(t, s, "/api/auth/send-email-code", map[string]any{"email": "speed@example.com", "purpose": "register"}, "")
-	post(t, s, "/api/auth/register", map[string]any{"email": "speed@example.com", "code": "123456", "password": "pass"}, "")
-	login := post(t, s, "/api/auth/login", map[string]any{"email": "speed@example.com", "password": "pass"}, "")
-	token := login["access_token"].(string)
+	token := registerTestUser(t, s, store, "speed@example.com", "pass")
 	plan, err := store.CreatePlan(Plan{Name: "Speed", DurationDays: 1, TrafficLimitBytes: 1024 * 1024 * 1024, BandwidthKbps: 512, MaxTunnels: 3, MaxTCPTunnels: 3, AllowTCP: true, Status: "active"})
 	if err != nil {
 		t.Fatal(err)
@@ -183,12 +299,10 @@ func TestTunnelBandwidthOverrideCannotExceedPlanLimit(t *testing.T) {
 }
 
 func TestClientTunnelsReturnsEffectiveBandwidthLimit(t *testing.T) {
+	t.Setenv("FRP_TOKEN", "test-runtime-token")
 	store := NewStore()
 	s := NewServer(store)
-	post(t, s, "/api/auth/send-email-code", map[string]any{"email": "client-speed@example.com", "purpose": "register"}, "")
-	post(t, s, "/api/auth/register", map[string]any{"email": "client-speed@example.com", "code": "123456", "password": "pass"}, "")
-	login := post(t, s, "/api/auth/login", map[string]any{"email": "client-speed@example.com", "password": "pass"}, "")
-	token := login["access_token"].(string)
+	token := registerTestUser(t, s, store, "client-speed@example.com", "pass")
 	plan, err := store.CreatePlan(Plan{Name: "Client Speed", DurationDays: 1, TrafficLimitBytes: 1024 * 1024 * 1024, BandwidthKbps: 512, MaxTunnels: 3, MaxTCPTunnels: 3, AllowTCP: true, Status: "active"})
 	if err != nil {
 		t.Fatal(err)
@@ -224,10 +338,7 @@ func TestClientTunnelsReturnsEffectiveBandwidthLimit(t *testing.T) {
 func TestSpeedTestTunnelLifecycleAndTrafficAccounting(t *testing.T) {
 	store := NewStore()
 	s := NewServer(store)
-	post(t, s, "/api/auth/send-email-code", map[string]any{"email": "speedtest@example.com", "purpose": "register"}, "")
-	post(t, s, "/api/auth/register", map[string]any{"email": "speedtest@example.com", "code": "123456", "password": "pass"}, "")
-	login := post(t, s, "/api/auth/login", map[string]any{"email": "speedtest@example.com", "password": "pass"}, "")
-	token := login["access_token"].(string)
+	token := registerTestUser(t, s, store, "speedtest@example.com", "pass")
 	post(t, s, "/api/user/redeem", map[string]any{"code": "DEMO-PLAN-2026"}, token)
 	rrLimit := request(t, s, "POST", "/api/speed-tests/tunnels", map[string]any{"type": "tcp", "local_host": "127.0.0.1", "local_port": 18080, "bandwidth_limit_kbps": 512}, token)
 	if rrLimit.Code != 400 {
@@ -255,11 +366,9 @@ func TestAPIServerRunsSpeedProbeAndCleansTunnel(t *testing.T) {
 
 	store := NewStore()
 	store.UpdateSettings(Settings{PlatformDomain: "example.com", FRPEntryDomain: "frp.example.com", ServerAddr: "127.0.0.1", FRPServerPort: 7000, TCPPortStart: port, TCPPortEnd: port, UDPPortStart: 30000, UDPPortEnd: 39999})
+	t.Setenv("FRP_TOKEN", "test-runtime-token")
 	s := NewServer(store)
-	post(t, s, "/api/auth/send-email-code", map[string]any{"email": "api-speed@example.com", "purpose": "register"}, "")
-	post(t, s, "/api/auth/register", map[string]any{"email": "api-speed@example.com", "code": "123456", "password": "pass"}, "")
-	login := post(t, s, "/api/auth/login", map[string]any{"email": "api-speed@example.com", "password": "pass"}, "")
-	token := login["access_token"].(string)
+	token := registerTestUser(t, s, store, "api-speed@example.com", "pass")
 	post(t, s, "/api/user/redeem", map[string]any{"code": "DEMO-PLAN-2026"}, token)
 	created := post(t, s, "/api/speed-tests/tunnels", map[string]any{"type": "tcp", "local_host": "127.0.0.1", "local_port": 18080}, token)
 	id := int64(created["id"].(float64))
@@ -506,11 +615,9 @@ func TestAdminNodeDelete(t *testing.T) {
 
 func TestClientTunnelsReturnsRuntimeFRPToken(t *testing.T) {
 	t.Setenv("FRP_TOKEN", "test-runtime-token")
-	s := NewServer(NewStore())
-	post(t, s, "/api/auth/send-email-code", map[string]any{"email": "token@example.com", "purpose": "register"}, "")
-	post(t, s, "/api/auth/register", map[string]any{"email": "token@example.com", "code": "123456", "password": "pass"}, "")
-	login := post(t, s, "/api/auth/login", map[string]any{"email": "token@example.com", "password": "pass"}, "")
-	token := login["access_token"].(string)
+	store := NewStore()
+	s := NewServer(store)
+	token := registerTestUser(t, s, store, "token@example.com", "pass")
 	rr := request(t, s, "GET", "/api/client/tunnels", nil, token)
 	if rr.Code != 200 {
 		t.Fatalf("client tunnels status=%d body=%s", rr.Code, rr.Body.String())

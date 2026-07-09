@@ -12,13 +12,32 @@ import (
 	"time"
 )
 
+const defaultSpeedProbeBytes int64 = 8 * 1024 * 1024
+const maxSpeedProbeBytes int64 = 64 * 1024 * 1024
+
+func normalizeSpeedProbeBytes(n int64, def int64) (int64, error) {
+	if def <= 0 {
+		def = defaultSpeedProbeBytes
+	}
+	if n <= 0 {
+		return def, nil
+	}
+	if n > maxSpeedProbeBytes {
+		return 0, fmt.Errorf("speed probe bytes exceeds %d", maxSpeedProbeBytes)
+	}
+	return n, nil
+}
+
 func runSpeedProbe(ctx context.Context, typ string, publicURL string, downloadBytes, uploadBytes int64) (SpeedTestProbeMetrics, error) {
 	typ = strings.ToLower(strings.TrimSpace(typ))
-	if downloadBytes <= 0 {
-		downloadBytes = 8 * 1024 * 1024
+	var err error
+	downloadBytes, err = normalizeSpeedProbeBytes(downloadBytes, defaultSpeedProbeBytes)
+	if err != nil {
+		return SpeedTestProbeMetrics{}, err
 	}
-	if uploadBytes <= 0 {
-		uploadBytes = 8 * 1024 * 1024
+	uploadBytes, err = normalizeSpeedProbeBytes(uploadBytes, defaultSpeedProbeBytes)
+	if err != nil {
+		return SpeedTestProbeMetrics{}, err
 	}
 	switch typ {
 	case "http", "https":
@@ -89,10 +108,14 @@ type speedMeasurement struct {
 }
 
 func (m speedMeasurement) kbps() float64 {
-	if m.elapsed <= 0 {
-		return 0
+	elapsed := m.elapsed
+	if elapsed <= 0 {
+		if m.bytes <= 0 {
+			return 0
+		}
+		elapsed = time.Nanosecond
 	}
-	return float64(m.bytes*8) / m.elapsed.Seconds() / 1000
+	return float64(m.bytes*8) / elapsed.Seconds() / 1000
 }
 
 func measureHTTPLatency(ctx context.Context, rawURL string) (float64, error) {
@@ -103,6 +126,10 @@ func measureHTTPLatency(ctx context.Context, rawURL string) (float64, error) {
 		return 0, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return 0, fmt.Errorf("http status %d", resp.StatusCode)
+	}
 	_, _ = io.Copy(io.Discard, resp.Body)
 	return float64(time.Since(start).Microseconds()) / 1000, nil
 }
@@ -114,6 +141,10 @@ func measureHTTPDownload(ctx context.Context, rawURL string) (speedMeasurement, 
 		return speedMeasurement{}, 0, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return speedMeasurement{}, 0, fmt.Errorf("http status %d", resp.StatusCode)
+	}
 	return copySpeedMeasured(resp.Body)
 }
 
@@ -126,6 +157,10 @@ func measureHTTPUpload(ctx context.Context, rawURL string, n int64) (speedMeasur
 		return speedMeasurement{}, 0, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return speedMeasurement{}, 0, fmt.Errorf("http status %d", resp.StatusCode)
+	}
 	_, _ = io.Copy(io.Discard, resp.Body)
 	m := speedMeasurement{bytes: n, elapsed: time.Since(start)}
 	return m, m.kbps(), nil
@@ -152,7 +187,10 @@ func measureTCPDownload(ctx context.Context, addr string, n int64) (speedMeasure
 		return speedMeasurement{}, 0, err
 	}
 	defer conn.Close()
-	_, _ = conn.Write([]byte{'d'})
+	var req [9]byte
+	req[0] = 'd'
+	binary.BigEndian.PutUint64(req[1:], uint64(n))
+	_, _ = conn.Write(req[:])
 	writeSpeedInt64(conn, n)
 	return copySpeedMeasured(conn)
 }
@@ -260,10 +298,18 @@ func copySpeedMeasured(r io.Reader) (speedMeasurement, float64, error) {
 			break
 		}
 		if err != nil {
+			if total > 0 && isConnectionReset(err) {
+				break
+			}
 			return speedMeasurement{}, 0, err
 		}
 	}
 	return speedMeasurement{bytes: total, elapsed: time.Since(start)}, peak.kbps(), nil
+}
+
+func isConnectionReset(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "connection reset") || strings.Contains(msg, "forcibly closed")
 }
 
 type speedPeakMeter struct {
