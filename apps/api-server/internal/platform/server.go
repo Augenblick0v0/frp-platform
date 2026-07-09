@@ -325,8 +325,8 @@ func (s *Server) userTopology(w http.ResponseWriter, r *http.Request, u User) {
 		TunnelCounts: counts,
 		Nodes:        s.safeNodes(),
 		Downloads: []DownloadArtifact{
-			{Platform: "windows", Label: "Windows Client", URL: "/downloads/windows/FrpTunnelClient-0.1.3-windows-amd64.zip"},
-			{Platform: "linux", Label: "Linux Client", URL: "/downloads/linux/FrpTunnelClient-0.1.3-linux-amd64.tar.gz"},
+			{Platform: "windows", Label: "Windows Client", URL: "/downloads/windows/FrpTunnelClient-0.1.5-windows-amd64.zip"},
+			{Platform: "linux", Label: "Linux Client", URL: "/downloads/linux/FrpTunnelClient-0.1.5-linux-amd64.tar.gz"},
 		},
 		RoleFlow: []TopologyLink{
 			{From: "User Console", To: "Master", Description: "Create tunnels, purchase plans, redeem plans"},

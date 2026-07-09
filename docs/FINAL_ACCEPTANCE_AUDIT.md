@@ -6,8 +6,8 @@ Generated: 2026-07-03T00:22:03+08:00
 
 - Production deploy guide: `deploy/PRODUCTION.md`.
 - Release scripts: `scripts/release.sh` and `scripts/verify-release.sh`.
-- Release manifest: `docs/releases/RELEASE-0.1.4.md`.
-- Release checksums: `docs/releases/SHA256SUMS-0.1.4.txt`.
+- Release manifest: `docs/releases/RELEASE-0.1.5.md`.
+- Release checksums: `docs/releases/SHA256SUMS-0.1.5.txt`.
 
 - Go tests: `./scripts/dev-smoke.sh` passed.
 - API server build: `go build ./apps/api-server/cmd/server` passed.
@@ -16,8 +16,8 @@ Generated: 2026-07-03T00:22:03+08:00
 - Docker image build: `docker compose --env-file .env.example build api-server admin-web user-web` passed in `deploy/`.
 - Final API smoke: register/login/redeem/create TCP/create HTTP/report traffic/admin dashboard/request certificate/renew certificate/operation logs passed.
 - Password storage: user/admin passwords are salted hash strings; legacy plaintext verify remains only for old dev rows.
-- Windows portable package generated: `dist/windows/FrpTunnelClient-0.1.4-windows-amd64.zip`.
-- Linux package generated: `dist/linux/FrpTunnelClient-0.1.4-linux-amd64.tar.gz`.
+- Windows portable package generated: `dist/windows/FrpTunnelClient-0.1.5-windows-amd64.zip`.
+- Linux package generated: `dist/linux/FrpTunnelClient-0.1.5-linux-amd64.tar.gz`.
 
 ## Requirement Audit
 
@@ -41,7 +41,7 @@ Generated: 2026-07-03T00:22:03+08:00
 | Linux 客户端 WebUI | client/frp-client local server and apps/client-webui | PASS |
 | Windows 安装包 | client/packaging/windows NSIS scripts and build-windows scripts | PASS |
 | 客户端 frpc 配置和进程管理 | clientcore RenderFRPCConfig and Manager Start/Stop | PASS |
-| 生产部署文档和发布清单 | deploy/PRODUCTION.md, scripts/release.sh, docs/releases/RELEASE-0.1.4.md | PASS |
+| 生产部署文档和发布清单 | deploy/PRODUCTION.md, scripts/release.sh, docs/releases/RELEASE-0.1.5.md | PASS |
 
 ## Remaining Gaps / Risks
 

@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 DIST="$ROOT/dist/windows"
 APP="$DIST/FrpTunnelClient"
-VERSION="${VERSION:-0.1.4}"
+VERSION="${VERSION:-0.1.5}"
 FRPC_WINDOWS_PATH="${FRPC_WINDOWS_PATH:-}"
 FRPC_WINDOWS_URL="${FRPC_WINDOWS_URL:-}"
 

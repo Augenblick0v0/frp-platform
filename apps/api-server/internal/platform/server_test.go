@@ -637,10 +637,7 @@ func TestClientTunnelsReturnsRuntimeFRPToken(t *testing.T) {
 func TestUserTopologyExposesOnlySafeNodeFields(t *testing.T) {
 	store := NewStore()
 	s := NewServer(store)
-	post(t, s, "/api/auth/send-email-code", map[string]any{"email": "topology@example.com", "purpose": "register"}, "")
-	post(t, s, "/api/auth/register", map[string]any{"email": "topology@example.com", "code": "123456", "password": "pass"}, "")
-	login := post(t, s, "/api/auth/login", map[string]any{"email": "topology@example.com", "password": "pass"}, "")
-	token := login["access_token"].(string)
+	token := registerTestUser(t, s, store, "topology@example.com", "pass")
 	post(t, s, "/api/user/redeem", map[string]any{"code": "DEMO-PLAN-2026"}, token)
 	_, err := store.CreateNode(Node{Name: "edge-safe", AgentURL: "http://node-agent:8090", AgentToken: "secret-agent", BindToken: "secret-bind", FRPEntryDomain: "frp.example.com", ServerAddr: "frp.example.com", FRPServerPort: 7000, Status: "online"})
 	if err != nil {
@@ -675,10 +672,7 @@ func TestAdminTopologyAndOrders(t *testing.T) {
 	t.Setenv("EPAY_KEY", "test-secret")
 	store := NewStore()
 	s := NewServer(store)
-	post(t, s, "/api/auth/send-email-code", map[string]any{"email": "order@example.com", "purpose": "register"}, "")
-	post(t, s, "/api/auth/register", map[string]any{"email": "order@example.com", "code": "123456", "password": "pass"}, "")
-	userLogin := post(t, s, "/api/auth/login", map[string]any{"email": "order@example.com", "password": "pass"}, "")
-	userToken := userLogin["access_token"].(string)
+	userToken := registerTestUser(t, s, store, "order@example.com", "pass")
 	created := post(t, s, "/api/payments/epay/orders", map[string]any{"plan_id": 1, "pay_type": "wechatpay"}, userToken)
 	if created["pay_type"] != "wxpay" {
 		t.Fatalf("expected wxpay alias normalization, got %#v", created["pay_type"])

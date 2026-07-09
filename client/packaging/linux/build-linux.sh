@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 DIST="$ROOT/dist/linux"
 APP="$DIST/frp-client"
-VERSION="${VERSION:-0.1.4}"
+VERSION="${VERSION:-0.1.5}"
 FRPC_LINUX_PATH="${FRPC_LINUX_PATH:-}"
 FRPC_LINUX_URL="${FRPC_LINUX_URL:-}"
 

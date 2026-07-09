@@ -1,0 +1,4 @@
+2835d262c84d250db9c91ba98cc7c5838ee19a6c1fccd9b71025c02572b922c7  ./windows/FrpTunnelClient-0.1.5-windows-amd64.zip
+012bdef43ccfd6d278be5c61f62f0f4aa08c4327ac23288f9ac640c74a2cb8c0  ./windows/installer.nsi
+e17d6f8cde2309ef311cb2c5056ba4cbfaf654592675bcff5b67ab2c5f5650b7  ./linux/FrpTunnelClient-0.1.5-linux-amd64.tar.gz
+aa2e0fc462dc78d74b1e9ec7cc1744a7d4e3592e31032521af53eaf59bc57bf8  ./fnos/api-server
