@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -22,6 +23,7 @@ type Manager struct {
 	logPath    string
 	cmd        *exec.Cmd
 	startedAt  *time.Time
+	speedBench *benchmarkService
 }
 
 type Status struct {
@@ -73,7 +75,8 @@ func (m *Manager) WriteConfig(cfg ServerConfig) (string, error) {
 }
 
 func (m *Manager) SyncFromServer(ctx context.Context, apiBase, token string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, trimSlash(apiBase)+"/api/client/tunnels", nil)
+	reqURL := clientTunnelsURL(apiBase)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return "", err
 	}
@@ -99,6 +102,15 @@ func (m *Manager) SyncFromServer(ctx context.Context, apiBase, token string) (st
 		return "", fmt.Errorf("server response failed: %s", envelope.Message)
 	}
 	return m.WriteConfig(envelope.Data)
+}
+
+func clientTunnelsURL(apiBase string) string {
+	base, query, hasQuery := strings.Cut(apiBase, "?")
+	url := trimSlash(base) + "/api/client/tunnels"
+	if hasQuery && strings.TrimSpace(query) != "" {
+		url += "?" + query
+	}
+	return url
 }
 
 func trimSlash(s string) string {

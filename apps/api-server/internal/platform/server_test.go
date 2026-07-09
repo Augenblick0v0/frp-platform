@@ -2,8 +2,11 @@ package platform
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -226,9 +229,13 @@ func TestSpeedTestTunnelLifecycleAndTrafficAccounting(t *testing.T) {
 	login := post(t, s, "/api/auth/login", map[string]any{"email": "speedtest@example.com", "password": "pass"}, "")
 	token := login["access_token"].(string)
 	post(t, s, "/api/user/redeem", map[string]any{"code": "DEMO-PLAN-2026"}, token)
-	created := post(t, s, "/api/speed-tests/tunnels", map[string]any{"type": "tcp", "local_host": "127.0.0.1", "local_port": 18080, "bandwidth_limit_kbps": 512}, token)
+	rrLimit := request(t, s, "POST", "/api/speed-tests/tunnels", map[string]any{"type": "tcp", "local_host": "127.0.0.1", "local_port": 18080, "bandwidth_limit_kbps": 512}, token)
+	if rrLimit.Code != 400 {
+		t.Fatalf("expected custom speed test bandwidth to fail, got %d body=%s", rrLimit.Code, rrLimit.Body.String())
+	}
+	created := post(t, s, "/api/speed-tests/tunnels", map[string]any{"type": "tcp", "local_host": "127.0.0.1", "local_port": 18080}, token)
 	id := int64(created["id"].(float64))
-	if created["effective_bandwidth_limit_kbps"].(float64) != 512 {
+	if created["effective_bandwidth_limit_kbps"].(float64) != 10240 {
 		t.Fatalf("unexpected speed test tunnel %#v", created)
 	}
 	summary := post(t, s, "/api/client/traffic", map[string]any{"reports": []map[string]any{{"tunnel_id": id, "bytes_in": 1000, "bytes_out": 2000}}}, token)
@@ -239,6 +246,105 @@ func TestSpeedTestTunnelLifecycleAndTrafficAccounting(t *testing.T) {
 	if rr.Code != 200 {
 		t.Fatalf("finish status=%d body=%s", rr.Code, rr.Body.String())
 	}
+}
+
+func TestAPIServerRunsSpeedProbeAndCleansTunnel(t *testing.T) {
+	ln := startTestTCPBenchmark(t)
+	defer ln.Close()
+	port := ln.Addr().(*net.TCPAddr).Port
+
+	store := NewStore()
+	store.UpdateSettings(Settings{PlatformDomain: "example.com", FRPEntryDomain: "frp.example.com", ServerAddr: "127.0.0.1", FRPServerPort: 7000, TCPPortStart: port, TCPPortEnd: port, UDPPortStart: 30000, UDPPortEnd: 39999})
+	s := NewServer(store)
+	post(t, s, "/api/auth/send-email-code", map[string]any{"email": "api-speed@example.com", "purpose": "register"}, "")
+	post(t, s, "/api/auth/register", map[string]any{"email": "api-speed@example.com", "code": "123456", "password": "pass"}, "")
+	login := post(t, s, "/api/auth/login", map[string]any{"email": "api-speed@example.com", "password": "pass"}, "")
+	token := login["access_token"].(string)
+	post(t, s, "/api/user/redeem", map[string]any{"code": "DEMO-PLAN-2026"}, token)
+	created := post(t, s, "/api/speed-tests/tunnels", map[string]any{"type": "tcp", "local_host": "127.0.0.1", "local_port": 18080}, token)
+	id := int64(created["id"].(float64))
+
+	rrCfg := request(t, s, "GET", fmt.Sprintf("/api/client/tunnels?speed_test_id=%d", id), nil, token)
+	if rrCfg.Code != 200 {
+		t.Fatalf("client speed config status=%d body=%s", rrCfg.Code, rrCfg.Body.String())
+	}
+	var cfg struct {
+		Success bool `json:"success"`
+		Data    struct {
+			ServerAddr string   `json:"server_addr"`
+			Tunnels    []Tunnel `json:"tunnels"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rrCfg.Body.Bytes(), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Data.ServerAddr != "127.0.0.1" || len(cfg.Data.Tunnels) != 1 || cfg.Data.Tunnels[0].ID != id {
+		t.Fatalf("unexpected speed config %#v", cfg.Data)
+	}
+
+	run := post(t, s, fmt.Sprintf("/api/speed-tests/%d/run", id), map[string]any{"download_bytes": 32768, "upload_bytes": 32768, "duration_seconds": 10}, token)
+	metrics := run["metrics"].(map[string]any)
+	if metrics["download_average_kbps"].(float64) <= 0 || metrics["upload_average_kbps"].(float64) <= 0 {
+		t.Fatalf("unexpected run result %#v", run)
+	}
+	if run["finished"] != true {
+		t.Fatalf("expected finished result %#v", run)
+	}
+	if _, err := store.SpeedTestTunnel(1, id); err == nil {
+		t.Fatalf("speed tunnel should be cleaned after run")
+	}
+}
+
+func startTestTCPBenchmark(t *testing.T) net.Listener {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(conn net.Conn) {
+				defer conn.Close()
+				var op [1]byte
+				if _, err := io.ReadFull(conn, op[:]); err != nil {
+					return
+				}
+				switch op[0] {
+				case 'p':
+					_, _ = conn.Write([]byte("p"))
+				case 'd':
+					n := readTestInt64(conn)
+					_, _ = io.CopyN(conn, testPatternReader{}, n)
+				case 'u':
+					n := readTestInt64(conn)
+					_, _ = io.CopyN(io.Discard, conn, n)
+					_, _ = conn.Write([]byte("ok"))
+				}
+			}(conn)
+		}
+	}()
+	return ln
+}
+
+func readTestInt64(r io.Reader) int64 {
+	var b [8]byte
+	if _, err := io.ReadFull(r, b[:]); err != nil {
+		return 0
+	}
+	return int64(binary.BigEndian.Uint64(b[:]))
+}
+
+type testPatternReader struct{}
+
+func (testPatternReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = byte(i % 251)
+	}
+	return len(p), nil
 }
 
 func request(t *testing.T, s *Server, method, path string, body map[string]any, token string) *httptest.ResponseRecorder {

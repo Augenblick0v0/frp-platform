@@ -62,6 +62,42 @@ type benchmarkService struct {
 	closed sync.Once
 }
 
+type PreparedSpeedBenchmark struct {
+	Type      string    `json:"type"`
+	LocalHost string    `json:"local_host"`
+	LocalPort int       `json:"local_port"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+func (m *Manager) PrepareSpeedBenchmark(typ string) (PreparedSpeedBenchmark, error) {
+	typ = strings.ToLower(strings.TrimSpace(typ))
+	if typ == "" {
+		typ = "tcp"
+	}
+	bench, err := startBenchmarkService(typ)
+	if err != nil {
+		return PreparedSpeedBenchmark{}, err
+	}
+	m.mu.Lock()
+	old := m.speedBench
+	m.speedBench = bench
+	m.mu.Unlock()
+	if old != nil {
+		_ = old.Close()
+	}
+	return PreparedSpeedBenchmark{Type: typ, LocalHost: bench.host, LocalPort: bench.port, ExpiresAt: time.Now().Add(15 * time.Minute)}, nil
+}
+
+func (m *Manager) CloseSpeedBenchmark() {
+	m.mu.Lock()
+	bench := m.speedBench
+	m.speedBench = nil
+	m.mu.Unlock()
+	if bench != nil {
+		_ = bench.Close()
+	}
+}
+
 func (m *Manager) RunSpeedTest(ctx context.Context, in SpeedTestRunRequest) (SpeedTestResult, error) {
 	typ := strings.ToLower(strings.TrimSpace(in.Type))
 	if typ == "" {

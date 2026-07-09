@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -51,6 +52,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/user/redeem", s.auth(s.redeem))
 	s.mux.HandleFunc("/api/user/purchase-info", s.auth(s.purchaseInfo))
 	s.mux.HandleFunc("/api/user/traffic", s.auth(s.userTraffic))
+	s.mux.HandleFunc("/api/user/nodes", s.auth(s.userNodes))
 	s.mux.HandleFunc("/api/user/certificates/request", s.auth(s.userRequestCertificate))
 	s.mux.HandleFunc("/api/tunnels", s.auth(s.tunnels))
 	s.mux.HandleFunc("/api/speed-tests/tunnels", s.auth(s.createSpeedTestTunnel))
@@ -258,7 +260,7 @@ func (s *Server) redeem(w http.ResponseWriter, r *http.Request, u User) {
 }
 func (s *Server) purchaseInfo(w http.ResponseWriter, r *http.Request, u User) {
 	st := s.store.Settings()
-	ok(w, map[string]any{"title": "购买套餐", "description": "请通过购买链接获取兑换码", "button_text": "立即购买", "purchase_url": st.PurchaseURL})
+	ok(w, map[string]any{"title": "购买套餐", "description": "请通过购买链接获取兑换码或直接支付开通套餐", "button_text": "立即购买", "purchase_url": st.PurchaseURL})
 }
 func (s *Server) userTraffic(w http.ResponseWriter, r *http.Request, u User) {
 	summary, err := s.store.TrafficSummary(u.ID)
@@ -272,6 +274,31 @@ func (s *Server) userTraffic(w http.ResponseWriter, r *http.Request, u User) {
 	}
 	ok(w, summary)
 }
+func (s *Server) userNodes(w http.ResponseWriter, r *http.Request, u User) {
+	nodes := s.store.Nodes()
+	type userNode struct {
+		ID             int64      `json:"id"`
+		Name           string     `json:"name"`
+		PublicURL      string     `json:"public_url"`
+		FRPEntryDomain string     `json:"frp_entry_domain"`
+		ServerAddr     string     `json:"server_addr"`
+		FRPServerPort  int        `json:"frp_server_port"`
+		TCPPortStart   int        `json:"tcp_port_start"`
+		TCPPortEnd     int        `json:"tcp_port_end"`
+		UDPPortStart   int        `json:"udp_port_start"`
+		UDPPortEnd     int        `json:"udp_port_end"`
+		Status         string     `json:"status"`
+		LastSeenAt     *time.Time `json:"last_seen_at,omitempty"`
+	}
+	out := make([]userNode, 0, len(nodes)+1)
+	st := s.store.Settings()
+	out = append(out, userNode{ID: 0, Name: "默认节点", FRPEntryDomain: st.FRPEntryDomain, ServerAddr: st.ServerAddr, FRPServerPort: st.FRPServerPort, TCPPortStart: st.TCPPortStart, TCPPortEnd: st.TCPPortEnd, UDPPortStart: st.UDPPortStart, UDPPortEnd: st.UDPPortEnd, Status: "online"})
+	for _, n := range nodes {
+		out = append(out, userNode{ID: n.ID, Name: n.Name, PublicURL: n.PublicURL, FRPEntryDomain: n.FRPEntryDomain, ServerAddr: n.ServerAddr, FRPServerPort: n.FRPServerPort, TCPPortStart: n.TCPPortStart, TCPPortEnd: n.TCPPortEnd, UDPPortStart: n.UDPPortStart, UDPPortEnd: n.UDPPortEnd, Status: n.Status, LastSeenAt: n.LastSeenAt})
+	}
+	ok(w, out)
+}
+
 func (s *Server) userRequestCertificate(w http.ResponseWriter, r *http.Request, u User) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(405)
@@ -363,6 +390,21 @@ func (s *Server) clientTunnels(w http.ResponseWriter, r *http.Request, u User) {
 		bandwidth = sub.BandwidthKbps
 	}
 	tunnels := s.store.Tunnels(u.ID)
+	if idText := strings.TrimSpace(r.URL.Query().Get("speed_test_id")); idText != "" {
+		id, _ := strconv.ParseInt(idText, 10, 64)
+		filtered := []Tunnel{}
+		for _, t := range tunnels {
+			if t.ID == id && t.SpeedTest && t.Status != "deleted" {
+				filtered = append(filtered, t)
+				if t.NodeID > 0 {
+					if node, err := s.store.Node(t.NodeID); err == nil {
+						st = settingsFromNode(st, node)
+					}
+				}
+			}
+		}
+		tunnels = filtered
+	}
 	for i := range tunnels {
 		tunnels[i].EffectiveBandwidthKbps = effectiveBandwidth(bandwidth, tunnels[i].BandwidthKbps)
 	}
@@ -392,15 +434,75 @@ func (s *Server) finishSpeedTestTunnel(w http.ResponseWriter, r *http.Request, u
 		return
 	}
 	id, action, okPath := parseSpeedTestAction(r.URL.Path)
-	if !okPath || action != "finish" {
+	if !okPath {
 		fail(w, 404, "SPEED_TEST_ACTION_NOT_FOUND", "speed test action not found")
 		return
 	}
-	if err := s.store.FinishSpeedTestTunnel(u.ID, id); err != nil {
+	switch action {
+	case "finish":
+		if err := s.store.FinishSpeedTestTunnel(u.ID, id); err != nil {
+			handleErr(w, err)
+			return
+		}
+		ok(w, map[string]any{"finished": true, "id": id})
+	case "run":
+		s.runSpeedTestProbe(w, r, u, id)
+	default:
+		fail(w, 404, "SPEED_TEST_ACTION_NOT_FOUND", "speed test action not found")
+	}
+}
+
+func (s *Server) runSpeedTestProbe(w http.ResponseWriter, r *http.Request, u User, id int64) {
+	var in SpeedTestProbeRequest
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&in)
+	}
+	if in.DurationSeconds <= 0 {
+		in.DurationSeconds = 45
+	}
+	if in.DurationSeconds > 120 {
+		in.DurationSeconds = 120
+	}
+	ctx, cancel := contextWithRequestTimeout(r, time.Duration(in.DurationSeconds)*time.Second)
+	defer cancel()
+	tunnel, err := s.store.SpeedTestTunnel(u.ID, id)
+	if err != nil {
 		handleErr(w, err)
 		return
 	}
-	ok(w, map[string]any{"finished": true, "id": id})
+	metrics, err := runSpeedProbe(ctx, tunnel.Type, tunnel.PublicURL, in.DownloadBytes, in.UploadBytes)
+	if err != nil {
+		fail(w, 502, "SPEED_TEST_PROBE_FAILED", err.Error())
+		return
+	}
+	_, _ = s.store.ReportTraffic(u.ID, []TrafficReport{{TunnelID: id, BytesIn: metrics.BytesIn, BytesOut: metrics.BytesOut}})
+	finished := false
+	if err := s.store.FinishSpeedTestTunnel(u.ID, id); err == nil {
+		finished = true
+	}
+	observed := metrics.DownloadAverageKbps
+	if metrics.UploadAverageKbps > observed {
+		observed = metrics.UploadAverageKbps
+	}
+	limitRatio := 0.0
+	if tunnel.EffectiveBandwidthKbps > 0 {
+		limitRatio = observed / float64(tunnel.EffectiveBandwidthKbps)
+	}
+	ok(w, SpeedTestRunResult{Tunnel: tunnel, Metrics: metrics, EffectiveBandwidthLimitKbps: tunnel.EffectiveBandwidthKbps, LimitRatio: limitRatio, BottleneckHint: speedBottleneckHint(limitRatio), Finished: finished})
+}
+
+func speedBottleneckHint(limitRatio float64) string {
+	if limitRatio >= 0.85 {
+		return "测速结果接近套餐限速，主要瓶颈可能是套餐限速或节点出口。"
+	}
+	if limitRatio > 0 {
+		return "测速结果低于套餐限速，瓶颈可能来自用户本地宽带、节点负载或网络链路。"
+	}
+	return "未获得有效吞吐数据，请检查本地客户端、临时隧道和节点连通性。"
+}
+
+func contextWithRequestTimeout(r *http.Request, timeout time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(r.Context(), timeout)
 }
 
 func parseSpeedTestAction(path string) (int64, string, bool) {
@@ -890,7 +992,7 @@ func (s *Server) adminTestMail(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
-	if err := s.mailer.Send(in.Email, "FRP 平台测试邮件", "这是一封来自 FRP 平台的测试邮件。邮件服务器配置可用。\n"); err != nil {
+	if err := s.mailer.Send(in.Email, "FRP 平台测试邮件", "这是一封来自 FRP 平台的测试邮件。邮件服务器配置可用。\\n"); err != nil {
 		fail(w, 500, "MAIL_SEND_FAILED", err.Error())
 		return
 	}

@@ -374,17 +374,24 @@ func (s *SQLStore) CreateSpeedTestTunnel(userID int64, req SpeedTestTunnelReques
 	if req.LocalHost == "" || req.LocalPort <= 0 {
 		return SpeedTestTunnel{}, fmt.Errorf("invalid speed test request")
 	}
-	if err := validateTunnelBandwidth(sub, req.BandwidthKbps); err != nil {
-		return SpeedTestTunnel{}, err
+	if req.BandwidthKbps > 0 {
+		return SpeedTestTunnel{}, fmt.Errorf("speed test bandwidth limit is inherited from subscription")
 	}
 	st := s.Settings()
+	if req.NodeID > 0 {
+		node, err := s.Node(req.NodeID)
+		if err != nil {
+			return SpeedTestTunnel{}, err
+		}
+		st = settingsFromNode(st, node)
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return SpeedTestTunnel{}, err
 	}
 	defer tx.Rollback()
 	expires := time.Now().Add(15 * time.Minute)
-	t := Tunnel{UserID: userID, Type: typ, LocalHost: req.LocalHost, LocalPort: req.LocalPort, BandwidthKbps: req.BandwidthKbps, EffectiveBandwidthKbps: effectiveBandwidth(sub.BandwidthKbps, req.BandwidthKbps), SpeedTest: true, ExpiresAt: &expires, Status: "active"}
+	t := Tunnel{UserID: userID, NodeID: req.NodeID, Type: typ, LocalHost: req.LocalHost, LocalPort: req.LocalPort, BandwidthKbps: 0, EffectiveBandwidthKbps: sub.BandwidthKbps, SpeedTest: true, ExpiresAt: &expires, Status: "active"}
 	switch typ {
 	case "tcp":
 		if !sub.AllowTCP {
@@ -424,7 +431,7 @@ func (s *SQLStore) CreateSpeedTestTunnel(userID int64, req SpeedTestTunnelReques
 		return SpeedTestTunnel{}, fmt.Errorf("unsupported tunnel type")
 	}
 	t.Name = fmt.Sprintf("__speedtest_%s_%d", typ, time.Now().UnixNano())
-	err = tx.QueryRow(`INSERT INTO tunnels (user_id,name,type,local_host,local_port,remote_port,domain,use_https,bandwidth_limit_kbps,speed_test,expires_at,status,public_url) VALUES ($1,$2,$3,$4,$5,NULLIF($6,0),NULLIF($7,''),$8,$9,true,$10,$11,$12) RETURNING id,created_at`, userID, t.Name, t.Type, t.LocalHost, t.LocalPort, t.RemotePort, t.Domain, t.UseHTTPS, t.BandwidthKbps, expires, t.Status, t.PublicURL).Scan(&t.ID, &t.CreatedAt)
+	err = tx.QueryRow(`INSERT INTO tunnels (user_id,node_id,name,type,local_host,local_port,remote_port,domain,use_https,bandwidth_limit_kbps,speed_test,expires_at,status,public_url) VALUES ($1,NULLIF($2,0),$3,$4,$5,$6,NULLIF($7,0),NULLIF($8,''),$9,$10,true,$11,$12,$13) RETURNING id,created_at`, userID, t.NodeID, t.Name, t.Type, t.LocalHost, t.LocalPort, t.RemotePort, t.Domain, t.UseHTTPS, t.BandwidthKbps, expires, t.Status, t.PublicURL).Scan(&t.ID, &t.CreatedAt)
 	if err != nil {
 		if isUnique(err) {
 			return SpeedTestTunnel{}, ErrConflict
@@ -438,6 +445,18 @@ func (s *SQLStore) CreateSpeedTestTunnel(userID int64, req SpeedTestTunnelReques
 	}
 	if err := tx.Commit(); err != nil {
 		return SpeedTestTunnel{}, err
+	}
+	return speedTestTunnelFromTunnel(t), nil
+}
+
+func (s *SQLStore) SpeedTestTunnel(userID int64, tunnelID int64) (SpeedTestTunnel, error) {
+	rows := s.queryTunnels(`WHERE user_id=$1 AND id=$2 AND speed_test=true AND status <> 'deleted' LIMIT 1`, userID, tunnelID)
+	if len(rows) == 0 {
+		return SpeedTestTunnel{}, ErrNotFound
+	}
+	t := rows[0]
+	if sub, err := s.Subscription(userID); err == nil && sub.Status == "active" {
+		t.EffectiveBandwidthKbps = effectiveBandwidth(sub.BandwidthKbps, t.BandwidthKbps)
 	}
 	return speedTestTunnelFromTunnel(t), nil
 }
@@ -482,7 +501,7 @@ func (s *SQLStore) Tunnels(userID int64) []Tunnel {
 }
 func (s *SQLStore) AllTunnels() []Tunnel { return s.queryTunnels(`ORDER BY id DESC`) }
 func (s *SQLStore) queryTunnels(suffix string, args ...any) []Tunnel {
-	rows, err := s.db.Query(`SELECT id,user_id,name,type,local_host,local_port,coalesce(remote_port,0),coalesce(domain,''),use_https,bandwidth_limit_kbps,speed_test,expires_at,status,coalesce(public_url,''),coalesce(error_message,''),created_at FROM tunnels `+suffix, args...)
+	rows, err := s.db.Query(`SELECT id,user_id,coalesce(node_id,0),name,type,local_host,local_port,coalesce(remote_port,0),coalesce(domain,''),use_https,bandwidth_limit_kbps,speed_test,expires_at,status,coalesce(public_url,''),coalesce(error_message,''),created_at FROM tunnels `+suffix, args...)
 	if err != nil {
 		return nil
 	}
@@ -491,7 +510,7 @@ func (s *SQLStore) queryTunnels(suffix string, args ...any) []Tunnel {
 	for rows.Next() {
 		var t Tunnel
 		var expires sql.NullTime
-		_ = rows.Scan(&t.ID, &t.UserID, &t.Name, &t.Type, &t.LocalHost, &t.LocalPort, &t.RemotePort, &t.Domain, &t.UseHTTPS, &t.BandwidthKbps, &t.SpeedTest, &expires, &t.Status, &t.PublicURL, &t.ErrorMessage, &t.CreatedAt)
+		_ = rows.Scan(&t.ID, &t.UserID, &t.NodeID, &t.Name, &t.Type, &t.LocalHost, &t.LocalPort, &t.RemotePort, &t.Domain, &t.UseHTTPS, &t.BandwidthKbps, &t.SpeedTest, &expires, &t.Status, &t.PublicURL, &t.ErrorMessage, &t.CreatedAt)
 		if expires.Valid {
 			t.ExpiresAt = &expires.Time
 		}

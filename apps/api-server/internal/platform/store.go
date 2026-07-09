@@ -358,35 +358,43 @@ func (s *Store) CreateSpeedTestTunnel(userID int64, req SpeedTestTunnelRequest) 
 	if req.LocalHost == "" || req.LocalPort <= 0 {
 		return SpeedTestTunnel{}, fmt.Errorf("invalid speed test request")
 	}
-	if err := validateTunnelBandwidth(sub, req.BandwidthKbps); err != nil {
-		return SpeedTestTunnel{}, err
+	if req.BandwidthKbps > 0 {
+		return SpeedTestTunnel{}, fmt.Errorf("speed test bandwidth limit is inherited from subscription")
+	}
+	nodeSettings := s.settings
+	if req.NodeID > 0 {
+		node, ok := s.nodes[req.NodeID]
+		if !ok {
+			return SpeedTestTunnel{}, ErrNotFound
+		}
+		nodeSettings = settingsFromNode(s.settings, node)
 	}
 	expires := time.Now().Add(15 * time.Minute)
-	t := Tunnel{ID: s.nextTunnelID, UserID: userID, Name: fmt.Sprintf("__speedtest_%s_%d", typ, s.nextTunnelID), Type: typ, LocalHost: req.LocalHost, LocalPort: req.LocalPort, BandwidthKbps: req.BandwidthKbps, EffectiveBandwidthKbps: effectiveBandwidth(sub.BandwidthKbps, req.BandwidthKbps), SpeedTest: true, ExpiresAt: &expires, CreatedAt: time.Now()}
+	t := Tunnel{ID: s.nextTunnelID, UserID: userID, NodeID: req.NodeID, Name: fmt.Sprintf("__speedtest_%s_%d", typ, s.nextTunnelID), Type: typ, LocalHost: req.LocalHost, LocalPort: req.LocalPort, BandwidthKbps: 0, EffectiveBandwidthKbps: sub.BandwidthKbps, SpeedTest: true, ExpiresAt: &expires, CreatedAt: time.Now()}
 	s.nextTunnelID++
 	switch typ {
 	case "tcp":
 		if !sub.AllowTCP {
 			return SpeedTestTunnel{}, ErrForbidden
 		}
-		port, err := allocate(s.usedTCP, s.settings.TCPPortStart, s.settings.TCPPortEnd)
+		port, err := allocate(s.usedTCP, nodeSettings.TCPPortStart, nodeSettings.TCPPortEnd)
 		if err != nil {
 			return SpeedTestTunnel{}, err
 		}
 		t.RemotePort = port
 		t.Status = "active"
-		t.PublicURL = fmt.Sprintf("%s:%d", s.settings.ServerAddr, port)
+		t.PublicURL = fmt.Sprintf("%s:%d", nodeSettings.ServerAddr, port)
 	case "udp":
 		if !sub.AllowUDP {
 			return SpeedTestTunnel{}, ErrForbidden
 		}
-		port, err := allocate(s.usedUDP, s.settings.UDPPortStart, s.settings.UDPPortEnd)
+		port, err := allocate(s.usedUDP, nodeSettings.UDPPortStart, nodeSettings.UDPPortEnd)
 		if err != nil {
 			return SpeedTestTunnel{}, err
 		}
 		t.RemotePort = port
 		t.Status = "active"
-		t.PublicURL = fmt.Sprintf("%s:%d", s.settings.ServerAddr, port)
+		t.PublicURL = fmt.Sprintf("%s:%d", nodeSettings.ServerAddr, port)
 	case "http", "https":
 		if typ == "http" && !sub.AllowHTTP {
 			return SpeedTestTunnel{}, ErrForbidden
@@ -394,7 +402,7 @@ func (s *Store) CreateSpeedTestTunnel(userID int64, req SpeedTestTunnelRequest) 
 		if typ == "https" && !sub.AllowHTTPS {
 			return SpeedTestTunnel{}, ErrForbidden
 		}
-		domain := fmt.Sprintf("speed-%d.%s", t.ID, strings.TrimPrefix(s.settings.FRPEntryDomain, "*."))
+		domain := fmt.Sprintf("speed-%d.%s", t.ID, strings.TrimPrefix(nodeSettings.FRPEntryDomain, "*."))
 		if _, exists := s.domains[domain]; exists {
 			return SpeedTestTunnel{}, ErrConflict
 		}
@@ -412,6 +420,42 @@ func (s *Store) CreateSpeedTestTunnel(userID int64, req SpeedTestTunnelRequest) 
 	}
 	s.tunnels[t.ID] = t
 	return speedTestTunnelFromTunnel(t), nil
+}
+
+func (s *Store) SpeedTestTunnel(userID int64, tunnelID int64) (SpeedTestTunnel, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tunnels[tunnelID]
+	if !ok || t.UserID != userID || !t.SpeedTest || t.Status == "deleted" {
+		return SpeedTestTunnel{}, ErrNotFound
+	}
+	return speedTestTunnelFromTunnel(t), nil
+}
+
+func settingsFromNode(fallback Settings, node Node) Settings {
+	out := fallback
+	if strings.TrimSpace(node.FRPEntryDomain) != "" {
+		out.FRPEntryDomain = node.FRPEntryDomain
+	}
+	if strings.TrimSpace(node.ServerAddr) != "" {
+		out.ServerAddr = node.ServerAddr
+	}
+	if node.FRPServerPort > 0 {
+		out.FRPServerPort = node.FRPServerPort
+	}
+	if node.TCPPortStart > 0 {
+		out.TCPPortStart = node.TCPPortStart
+	}
+	if node.TCPPortEnd > 0 {
+		out.TCPPortEnd = node.TCPPortEnd
+	}
+	if node.UDPPortStart > 0 {
+		out.UDPPortStart = node.UDPPortStart
+	}
+	if node.UDPPortEnd > 0 {
+		out.UDPPortEnd = node.UDPPortEnd
+	}
+	return out
 }
 
 func (s *Store) FinishSpeedTestTunnel(userID int64, tunnelID int64) error {
@@ -522,7 +566,7 @@ func speedTestTunnelFromTunnel(t Tunnel) SpeedTestTunnel {
 	if t.ExpiresAt != nil {
 		expires = *t.ExpiresAt
 	}
-	return SpeedTestTunnel{ID: t.ID, Type: t.Type, LocalHost: t.LocalHost, LocalPort: t.LocalPort, RemotePort: t.RemotePort, Domain: t.Domain, PublicURL: t.PublicURL, EffectiveBandwidthKbps: t.EffectiveBandwidthKbps, ExpiresAt: expires}
+	return SpeedTestTunnel{ID: t.ID, NodeID: t.NodeID, Type: t.Type, LocalHost: t.LocalHost, LocalPort: t.LocalPort, RemotePort: t.RemotePort, Domain: t.Domain, PublicURL: t.PublicURL, EffectiveBandwidthKbps: t.EffectiveBandwidthKbps, ExpiresAt: expires}
 }
 
 func (s *Store) Tunnels(userID int64) []Tunnel {

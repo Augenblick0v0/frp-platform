@@ -84,6 +84,7 @@ type PaymentOrder struct {
 type Tunnel struct {
 	ID                     int64      `json:"id"`
 	UserID                 int64      `json:"user_id"`
+	NodeID                 int64      `json:"node_id,omitempty"`
 	Name                   string     `json:"name"`
 	Type                   string     `json:"type"`
 	LocalHost              string     `json:"local_host"`
@@ -158,11 +159,13 @@ type SpeedTestTunnelRequest struct {
 	Type          string `json:"type"`
 	LocalHost     string `json:"local_host"`
 	LocalPort     int    `json:"local_port"`
+	NodeID        int64  `json:"node_id,omitempty"`
 	BandwidthKbps int    `json:"bandwidth_limit_kbps"`
 }
 
 type SpeedTestTunnel struct {
 	ID                     int64     `json:"id"`
+	NodeID                 int64     `json:"node_id,omitempty"`
 	Type                   string    `json:"type"`
 	LocalHost              string    `json:"local_host"`
 	LocalPort              int       `json:"local_port"`
@@ -171,6 +174,31 @@ type SpeedTestTunnel struct {
 	PublicURL              string    `json:"public_url"`
 	EffectiveBandwidthKbps int       `json:"effective_bandwidth_limit_kbps"`
 	ExpiresAt              time.Time `json:"expires_at"`
+}
+
+type SpeedTestProbeRequest struct {
+	DownloadBytes   int64 `json:"download_bytes"`
+	UploadBytes     int64 `json:"upload_bytes"`
+	DurationSeconds int   `json:"duration_seconds"`
+}
+
+type SpeedTestProbeMetrics struct {
+	DownloadAverageKbps float64 `json:"download_average_kbps"`
+	DownloadPeakKbps    float64 `json:"download_peak_kbps"`
+	UploadAverageKbps   float64 `json:"upload_average_kbps"`
+	UploadPeakKbps      float64 `json:"upload_peak_kbps"`
+	LatencyMs           float64 `json:"latency_ms"`
+	BytesIn             int64   `json:"bytes_in"`
+	BytesOut            int64   `json:"bytes_out"`
+}
+
+type SpeedTestRunResult struct {
+	Tunnel                      SpeedTestTunnel       `json:"tunnel"`
+	Metrics                     SpeedTestProbeMetrics `json:"metrics"`
+	EffectiveBandwidthLimitKbps int                   `json:"effective_bandwidth_limit_kbps"`
+	LimitRatio                  float64               `json:"limit_ratio"`
+	BottleneckHint              string                `json:"bottleneck_hint"`
+	Finished                    bool                  `json:"finished"`
 }
 
 type TrafficSummary struct {

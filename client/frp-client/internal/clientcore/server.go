@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -31,7 +32,20 @@ func (s *LocalServer) Handler() http.Handler {
 	})
 	mux.HandleFunc("/api/config/render", s.renderConfig)
 	mux.HandleFunc("/api/config/sync", s.syncConfig)
+	mux.HandleFunc("/api/speed-tests/prepare", s.prepareSpeedTest)
+	mux.HandleFunc("/api/speed-tests/cleanup", s.cleanupSpeedTest)
 	mux.HandleFunc("/api/speed-tests/run", s.runSpeedTest)
+	mux.HandleFunc("/api/frpc/restart", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(405)
+			return
+		}
+		if err := s.manager.Restart(); err != nil {
+			writeError(w, 400, err)
+			return
+		}
+		writeJSON(w, s.manager.Status())
+	})
 	mux.HandleFunc("/api/frpc/start", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(405)
@@ -56,7 +70,44 @@ func (s *LocalServer) Handler() http.Handler {
 		writeJSON(w, s.manager.Status())
 	})
 	mux.Handle("/", http.FileServer(http.Dir(s.webDir)))
-	return mux
+	return localCORS(mux)
+}
+
+func (s *LocalServer) prepareSpeedTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(405)
+		return
+	}
+	var in struct {
+		Type string `json:"type"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&in)
+	bench, err := s.manager.PrepareSpeedBenchmark(in.Type)
+	if err != nil {
+		writeError(w, 400, err)
+		return
+	}
+	writeJSON(w, bench)
+}
+
+func (s *LocalServer) cleanupSpeedTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(405)
+		return
+	}
+	s.manager.CloseSpeedBenchmark()
+	writeJSON(w, map[string]any{"cleaned": true})
+}
+
+func syncAPIBase(apiBase string, speedTestID int64) string {
+	if speedTestID <= 0 {
+		return apiBase
+	}
+	sep := "?"
+	if strings.Contains(apiBase, "?") {
+		sep = "&"
+	}
+	return apiBase + sep + "speed_test_id=" + fmt.Sprint(speedTestID)
 }
 
 func (s *LocalServer) reportTraffic(w http.ResponseWriter, r *http.Request) {
@@ -148,8 +199,9 @@ func (s *LocalServer) syncConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		APIBase string `json:"api_base"`
-		Token   string `json:"token"`
+		APIBase     string `json:"api_base"`
+		Token       string `json:"token"`
+		SpeedTestID int64  `json:"speed_test_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeError(w, 400, err)
@@ -157,12 +209,25 @@ func (s *LocalServer) syncConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	text, err := s.manager.SyncFromServer(ctx, in.APIBase, in.Token)
+	text, err := s.manager.SyncFromServer(ctx, syncAPIBase(in.APIBase, in.SpeedTestID), in.Token)
 	if err != nil {
 		writeError(w, 400, err)
 		return
 	}
 	writeJSON(w, map[string]any{"config": text, "status": s.manager.Status()})
+}
+
+func localCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(204)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func writeJSON(w http.ResponseWriter, data any) {
