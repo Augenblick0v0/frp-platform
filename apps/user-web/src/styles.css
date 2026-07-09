@@ -26,3 +26,30 @@
 .plan-card { height: 100%; }
 .speed-steps .ant-steps-item-description { max-width: 180px; }
 @media (max-width: 900px) { .landing-card { grid-template-columns: 1fr; } .plan-grid, .protocol-grid { grid-template-columns: 1fr; } }
+
+.user-dashboard .ant-card { border-radius: 18px; }
+.user-hero-card { display: grid; grid-template-columns: 1fr 320px; gap: 18px; padding: 28px; border-radius: 22px; background: linear-gradient(135deg, #eef6ff 0%, #ffffff 56%, #e0f2fe 100%); border: 1px solid #dbeafe; box-shadow: 0 22px 70px rgba(37,99,235,.10); }
+.eyebrow { letter-spacing: .14em; font-size: 12px; color: #2563eb; font-weight: 700; }
+.hero-plan-card { padding: 20px; border-radius: 18px; background: #0f172a; color: #fff; display: grid; gap: 8px; align-content: center; }
+.hero-plan-card span { color: #93c5fd; font-size: 13px; }
+.hero-plan-card strong { font-size: 26px; }
+.hero-plan-card p { color: #dbeafe; margin: 0 0 8px; }
+.quick-action-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.quick-action-card { cursor: pointer; transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; border: 1px solid #dbeafe; }
+.quick-action-card:hover { transform: translateY(-3px); box-shadow: 0 18px 40px rgba(37,99,235,.12); border-color: #93c5fd; }
+.notice-list { display: grid; gap: 12px; }
+.notice-list div { display: grid; gap: 4px; padding: 13px 14px; border-radius: 14px; background: #f8fbff; border: 1px solid #e2e8f0; }
+.notice-list span { color: #64748b; }
+.create-layout, .speed-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; }
+.speed-layout { grid-template-columns: 420px minmax(0, 1fr); }
+.create-main-card .ant-card-head, .create-side-card .ant-card-head { border-bottom: 0; }
+.mefrp-protocol-grid { margin-bottom: 20px; }
+.mefrp-protocol-grid .protocol-card { text-align: left; display: grid; gap: 8px; min-height: 118px; }
+.protocol-card strong { font-size: 20px; color: #0f172a; }
+.protocol-card span { color: #64748b; font-size: 13px; line-height: 1.5; }
+.protocol-card em { font-style: normal; color: #2563eb; font-size: 12px; font-weight: 700; }
+.form-section { padding: 18px; border: 1px solid #e2e8f0; border-radius: 18px; background: #fbfdff; }
+.create-footer { margin-top: 18px; display: flex; justify-content: flex-end; gap: 10px; }
+.speed-result-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 1100px) { .user-hero-card, .create-layout, .speed-layout { grid-template-columns: 1fr; } .quick-action-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .speed-result-grid { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .quick-action-grid { grid-template-columns: 1fr; } .user-hero-card { padding: 20px; } }
