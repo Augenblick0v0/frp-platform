@@ -213,14 +213,20 @@ func TestSpeedProbeRejectsHugePayload(t *testing.T) {
 	}
 }
 
-func TestClientTunnelsRejectsDefaultFRPToken(t *testing.T) {
-	t.Setenv("FRP_TOKEN", "")
+func TestClientTunnelsDoesNotExposeFRPToken(t *testing.T) {
+	t.Setenv("FRP_TOKEN", "super-secret-frp-token-for-test")
+	t.Setenv("ALLOW_INSECURE_DEFAULTS", "true")
 	store := NewStore()
 	s := NewServer(store)
-	token := registerTestUser(t, s, store, "no-frp-token@example.com", "pass")
-	rr := request(t, s, "GET", "/api/client/tunnels", nil, token)
-	if rr.Code != 500 {
-		t.Fatalf("expected missing frp token 500, got %d body=%s", rr.Code, rr.Body.String())
+	token := registerTestUser(t, s, store, "no-token-leak@example.com", "pass")
+	post(t, s, "/api/user/redeem", map[string]any{"code": "DEMO-PLAN-2026"}, token)
+
+	rr := request(t, s, http.MethodGet, "/api/client/tunnels", nil, token)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("client tunnels status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if strings.Contains(rr.Body.String(), "super-secret-frp-token-for-test") || strings.Contains(rr.Body.String(), `"token"`) {
+		t.Fatalf("/api/client/tunnels leaked frp token: %s", rr.Body.String())
 	}
 }
 
@@ -613,8 +619,7 @@ func TestAdminNodeDelete(t *testing.T) {
 	}
 }
 
-func TestClientTunnelsReturnsRuntimeFRPToken(t *testing.T) {
-	t.Setenv("FRP_TOKEN", "test-runtime-token")
+func TestClientTunnelsMarksLocalFRPTokenRequired(t *testing.T) {
 	store := NewStore()
 	s := NewServer(store)
 	token := registerTestUser(t, s, store, "token@example.com", "pass")
@@ -629,8 +634,8 @@ func TestClientTunnelsReturnsRuntimeFRPToken(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
 		t.Fatal(err)
 	}
-	if out.Data["token"] != "test-runtime-token" {
-		t.Fatalf("expected runtime token, got %#v", out.Data["token"])
+	if out.Data["token"] != nil || out.Data["requires_local_frp_token"] != true {
+		t.Fatalf("expected local token marker without token leak, got %#v", out.Data)
 	}
 }
 

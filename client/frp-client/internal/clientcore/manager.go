@@ -128,6 +128,14 @@ func (m *Manager) SyncFromServer(ctx context.Context, apiBase, token string) (st
 	if !envelope.Success {
 		return "", fmt.Errorf("server response failed: %s", envelope.Message)
 	}
+	localFRPToken := strings.TrimSpace(os.Getenv("FRP_TOKEN"))
+	if localFRPToken == "" {
+		localFRPToken = strings.TrimSpace(os.Getenv("FRP_CLIENT_TOKEN"))
+	}
+	if localFRPToken == "" {
+		return "", fmt.Errorf("FRP_TOKEN or FRP_CLIENT_TOKEN must be configured locally")
+	}
+	envelope.Data.Token = localFRPToken
 	return m.WriteConfig(envelope.Data)
 }
 

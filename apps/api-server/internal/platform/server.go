@@ -506,11 +506,6 @@ func (s *Server) clientTraffic(w http.ResponseWriter, r *http.Request, u User) {
 	ok(w, summary)
 }
 func (s *Server) clientTunnels(w http.ResponseWriter, r *http.Request, u User) {
-	frpToken := getenv("FRP_TOKEN", "")
-	if frpToken == "" || frpToken == "change-me" {
-		fail(w, 500, "FRP_TOKEN_NOT_CONFIGURED", "FRP_TOKEN must be configured")
-		return
-	}
 	s.store.CleanupExpiredSpeedTestTunnels(time.Now())
 	st := s.store.Settings()
 	sub, err := s.store.Subscription(u.ID)
@@ -537,7 +532,14 @@ func (s *Server) clientTunnels(w http.ResponseWriter, r *http.Request, u User) {
 	for i := range tunnels {
 		tunnels[i].EffectiveBandwidthKbps = effectiveBandwidth(bandwidth, tunnels[i].BandwidthKbps)
 	}
-	ok(w, map[string]any{"server_addr": st.ServerAddr, "server_port": st.FRPServerPort, "token": frpToken, "bandwidth_limit_kbps": bandwidth, "tunnels": tunnels})
+	ok(w, map[string]any{
+		"server_addr":              st.ServerAddr,
+		"server_port":              st.FRPServerPort,
+		"bandwidth_limit_kbps":     bandwidth,
+		"tunnels":                  tunnels,
+		"requires_local_frp_token": true,
+		"frp_token_delivery":       "local-client-secret",
+	})
 }
 
 func (s *Server) createSpeedTestTunnel(w http.ResponseWriter, r *http.Request, u User) {

@@ -55,3 +55,10 @@ func TestRenderFRPCConfigIncludesEffectiveBandwidthLimit(t *testing.T) {
 		t.Fatalf("missing tunnel bandwidth override:\n%s", got)
 	}
 }
+
+func TestRenderFRPCConfigRequiresLocalToken(t *testing.T) {
+	_, err := RenderFRPCConfig(ServerConfig{ServerAddr: "frp.example.com", ServerPort: 7000})
+	if err == nil || !strings.Contains(err.Error(), "token required") {
+		t.Fatalf("expected token error, got %v", err)
+	}
+}
