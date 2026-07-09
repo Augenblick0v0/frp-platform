@@ -1,80 +1,30 @@
 # 验收清单
 
+> 状态说明：`[x]` 已验证，`[ ]` 未验证，`[-]` 不适用或被后续计划替代。
+
 ## 1. 部署验收
 
-- [ ] Docker Compose 可以启动全部服务。
-- [ ] Nginx 正常监听 80/443。
-- [ ] frps 正常监听 7000。
-- [ ] PostgreSQL 正常运行。
-- [ ] Redis 正常运行。
-- [ ] API health check 正常。
-- [ ] 管理后台可访问。
-- [ ] 用户面板可访问。
+- [x] 用户端入口 `http://192.168.110.56:18188` 返回 HTTP 200。证据：2026-07-09 `Invoke-WebRequest`。
+- [x] 后台端入口 `http://192.168.110.56:18189` 返回 HTTP 200。证据：2026-07-09 `Invoke-WebRequest`。
+- [x] 用户端/后台端构建 asset SHA256 与本地 `v0.1.5` 一致。
+- [x] `/health` 通过前端 Nginx 代理返回 `status=ok`。
+- [ ] 后端容器二进制 SHA256 与本地 `dist/fnos/api-server` 一致。
 
-## 2. 用户验收
+## 2. 安全验收
 
-- [ ] 用户可以输入邮箱发送验证码。
-- [ ] 用户可以收到验证码邮件。
-- [ ] 用户可以注册账号。
-- [ ] 用户可以登录。
-- [ ] 用户可以查看当前套餐。
-- [ ] 用户可以兑换套餐。
-- [ ] 用户可以跳转购买链接。
+- [x] `/api/client/tunnels` 不返回 `FRP_TOKEN` 或 JSON 字段 `token`。证据：`TestClientTunnelsDoesNotExposeFRPToken`。
+- [x] 生产环境 CORS 只允许 `CORS_ALLOWED_ORIGINS`。证据：`TestCORSRejectsUnconfiguredOrigin`。
+- [x] 内存 Store 会话 24 小时后过期。证据：`TestInMemoryUserSessionExpires`、`TestInMemoryAdminSessionExpires`。
+- [x] 生产环境缺少 `DATABASE_URL` 启动失败。证据：`TestRequireDatabaseURLInProduction`。
+- [x] 空密码注册返回错误，不触发 panic。证据：`TestNormalizeRegistrationInputRejectsEmptyPassword`。
+- [x] 弱占位密钥启动失败。证据：`TestValidateRequiredSecretsRejectsPlaceholders`。
+- [x] 本地客户端 WebUI 调用本地受保护 API 自动携带 `X-Local-Token`。证据：`apps/shared/frontend/api/client.js` 与 `apps/client-webui/src/App.jsx`。
+- [x] 用户端测速调用本地客户端 API 时携带 `X-Local-Token`，远端 Master API 调用不携带。证据：`apps/user-web/src/App.jsx`。
 
-## 3. 后台验收
+## 3. 发布前命令
 
-- [ ] 管理员可以登录。
-- [ ] 管理员可以创建套餐。
-- [ ] 管理员可以编辑套餐。
-- [ ] 管理员可以生成兑换码。
-- [ ] 管理员可以批量生成兑换码。
-- [ ] 管理员可以配置购买链接。
-- [ ] 管理员可以配置 TCP 端口池。
-- [ ] 管理员可以配置 UDP 端口池。
-- [ ] 管理员可以查看用户。
-- [ ] 管理员可以查看隧道。
-- [ ] 管理员可以查看域名。
-- [ ] 管理员可以查看证书。
-
-## 4. TCP/UDP 验收
-
-- [ ] 用户可以创建 TCP 隧道。
-- [ ] 系统自动分配 TCP 端口。
-- [ ] TCP 端口不会重复分配。
-- [ ] 删除 TCP 隧道后端口释放。
-- [ ] 用户可以创建 UDP 隧道。
-- [ ] 系统自动分配 UDP 端口。
-- [ ] UDP 端口不会重复分配。
-- [ ] 删除 UDP 隧道后端口释放。
-
-## 5. HTTP/HTTPS 验收
-
-- [ ] 用户可以创建 HTTP 隧道。
-- [ ] 用户可以绑定自定义域名。
-- [ ] 系统可以提示 CNAME 目标。
-- [ ] 系统可以检测 CNAME。
-- [ ] 用户访问 HTTP 域名不需要端口。
-- [ ] 用户可以创建 HTTPS 隧道。
-- [ ] 系统可以申请 Let's Encrypt 证书。
-- [ ] Nginx 可以加载证书。
-- [ ] 用户访问 HTTPS 域名不需要端口。
-- [ ] 不同域名访问不同用户隧道。
-
-## 6. 客户端验收
-
-- [ ] Linux 客户端可以启动。
-- [ ] Linux 客户端 WebUI 可访问。
-- [ ] Windows 安装包可以安装。
-- [ ] Windows 客户端可以启动。
-- [ ] 客户端可以登录。
-- [ ] 客户端可以创建隧道。
-- [ ] 客户端可以启动隧道。
-- [ ] 客户端可以停止隧道。
-- [ ] 客户端可以查看日志。
-
-## 7. 流量验收
-
-- [ ] 客户端可以上报流量。
-- [ ] 后台可以查看用户流量。
-- [ ] 用户可以查看自己的流量。
-- [ ] 超流量后禁止启动新隧道。
+- [ ] `ALLOW_INSECURE_DEFAULTS=true go test ./apps/api-server/...`
+- [ ] `go test ./client/frp-client/...`
+- [ ] `npm run build`：`apps/user-web`、`apps/admin-web`、`apps/client-webui`
+- [ ] `docker compose config`：标准、control、fnOS compose 文件
+- [ ] GitHub Release 与 tag 已发布。

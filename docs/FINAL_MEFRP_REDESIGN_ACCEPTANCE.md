@@ -183,3 +183,17 @@ frp-fnos-api           deploy-api-server    Up   8080/tcp
 ## 10. 结论
 
 本次 mefrp 排版动线与 frp-panel 架构重构已完成。用户端、后台端、本地客户端 UI 均已工程化为 React + Vite + Ant Design；飞牛标准 Docker Compose 部署成功；支付、套餐、兑换码、隧道、节点操作、安全字段和真实支付下单流程均已通过验收。
+
+## 8. 安全审计跟进门禁
+
+2026-07-09 安全审计跟进已补充发布门禁：
+
+- `/api/client/tunnels` 不再返回全局 `FRP_TOKEN` 或 `token` 字段。
+- API CORS 改为 `CORS_ALLOWED_ORIGINS` 白名单。
+- 内存 Store 用户/管理员 session 增加 24 小时过期。
+- 生产环境缺少 `DATABASE_URL` 时启动失败；演示兑换码仅在 `ALLOW_INSECURE_DEFAULTS=true` 下启用。
+- 注册输入统一校验，空密码不会触发 SQL 路径 panic。
+- `ADMIN_PASSWORD` 与 `FRP_TOKEN` 拒绝弱值、占位值和短密钥。
+- 本地 client-webui 与用户端测速链路均按本地 API 要求携带 `X-Local-Token`。
+
+最终验证证据见本文件后续 `Final Security Follow-up Evidence` 章节。
