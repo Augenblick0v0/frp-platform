@@ -134,9 +134,10 @@ func (s *Store) DebugEmailCode(email, purpose string) string {
 func (s *Store) Register(email, code, password string) (User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	email = strings.ToLower(strings.TrimSpace(email))
-	if email == "" || password == "" {
-		return User{}, fmt.Errorf("email and password required")
+	var err error
+	email, err = NormalizeRegistrationInput(email, password)
+	if err != nil {
+		return User{}, err
 	}
 	if s.emailCodes[emailCodeKey(email, "register")] != code {
 		return User{}, fmt.Errorf("invalid verification code")

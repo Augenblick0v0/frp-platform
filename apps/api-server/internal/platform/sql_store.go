@@ -99,7 +99,11 @@ func (s *SQLStore) SendEmailCode(email, purpose string) string {
 }
 
 func (s *SQLStore) Register(email, code, password string) (User, error) {
-	email = strings.ToLower(strings.TrimSpace(email))
+	var err error
+	email, err = NormalizeRegistrationInput(email, password)
+	if err != nil {
+		return User{}, err
+	}
 	var found string
 	err := s.db.QueryRow(`SELECT code FROM email_verification_codes WHERE email=$1 AND purpose='register' AND used_at IS NULL AND expires_at>now() ORDER BY created_at DESC LIMIT 1`, email).Scan(&found)
 	if err != nil || found != code {
@@ -110,8 +114,12 @@ func (s *SQLStore) Register(email, code, password string) (User, error) {
 		return User{}, err
 	}
 	defer tx.Rollback()
+	hash, err := HashPassword(password)
+	if err != nil {
+		return User{}, err
+	}
 	var u User
-	err = tx.QueryRow(`INSERT INTO users (email,password_hash,status,email_verified_at) VALUES ($1,$2,'active',now()) RETURNING id,email,password_hash,status,created_at`, email, mustHashPassword(password)).Scan(&u.ID, &u.Email, &u.Password, &u.Status, &u.CreatedAt)
+	err = tx.QueryRow(`INSERT INTO users (email,password_hash,status,email_verified_at) VALUES ($1,$2,'active',now()) RETURNING id,email,password_hash,status,created_at`, email, hash).Scan(&u.ID, &u.Email, &u.Password, &u.Status, &u.CreatedAt)
 	if err != nil {
 		if isUnique(err) {
 			return User{}, ErrConflict

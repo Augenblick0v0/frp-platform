@@ -68,3 +68,11 @@ func mustHashPassword(password string) string {
 	}
 	return h
 }
+
+func NormalizeRegistrationInput(email, password string) (string, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" || password == "" {
+		return "", fmt.Errorf("email and password required")
+	}
+	return email, nil
+}

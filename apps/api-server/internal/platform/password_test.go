@@ -24,3 +24,20 @@ func TestPlaintextPasswordFallbackDisabledByDefault(t *testing.T) {
 		t.Fatal("plaintext password fallback must be disabled by default")
 	}
 }
+
+func TestNormalizeRegistrationInputRejectsEmptyPassword(t *testing.T) {
+	_, err := NormalizeRegistrationInput("user@example.com", "")
+	if err == nil || err.Error() != "email and password required" {
+		t.Fatalf("expected email/password required, got %v", err)
+	}
+}
+
+func TestNormalizeRegistrationInputNormalizesEmail(t *testing.T) {
+	email, err := NormalizeRegistrationInput(" USER@Example.COM ", "pass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if email != "user@example.com" {
+		t.Fatalf("unexpected normalized email %q", email)
+	}
+}
