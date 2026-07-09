@@ -41,3 +41,21 @@ func TestNormalizeRegistrationInputNormalizesEmail(t *testing.T) {
 		t.Fatalf("unexpected normalized email %q", email)
 	}
 }
+
+func TestValidateRequiredSecretsRejectsPlaceholders(t *testing.T) {
+	t.Setenv("ALLOW_INSECURE_DEFAULTS", "false")
+	t.Setenv("ADMIN_PASSWORD", "replace-with-strong-admin-password")
+	t.Setenv("FRP_TOKEN", "frp-token-with-at-least-32-randomish-chars")
+	if err := ValidateRequiredSecrets(); err == nil {
+		t.Fatal("expected weak admin password to be rejected")
+	}
+}
+
+func TestValidateRequiredSecretsAcceptsStrongValues(t *testing.T) {
+	t.Setenv("ALLOW_INSECURE_DEFAULTS", "false")
+	t.Setenv("ADMIN_PASSWORD", "A9f3Jk8Lm2Np6Qr4Tu7Vx")
+	t.Setenv("FRP_TOKEN", "Zx7Yp2Lm9Qw4Er8Ty1Ui5Op3As6Df0Gh")
+	if err := ValidateRequiredSecrets(); err != nil {
+		t.Fatalf("expected strong values to pass, got %v", err)
+	}
+}

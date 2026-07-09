@@ -39,11 +39,11 @@ func ValidateRequiredSecrets() error {
 	if InsecureDefaultsAllowed() {
 		return nil
 	}
-	if v := getenv("ADMIN_PASSWORD", ""); v == "" || v == "admin123456" {
-		return fmt.Errorf("ADMIN_PASSWORD must be set to a non-default value")
+	if isWeakSecret("ADMIN_PASSWORD", getenv("ADMIN_PASSWORD", "")) {
+		return fmt.Errorf("ADMIN_PASSWORD must be set to a strong non-placeholder value")
 	}
-	if v := getenv("FRP_TOKEN", ""); v == "" || v == "change-me" {
-		return fmt.Errorf("FRP_TOKEN must be set to a non-default value")
+	if isWeakSecret("FRP_TOKEN", getenv("FRP_TOKEN", "")) {
+		return fmt.Errorf("FRP_TOKEN must be set to a strong non-placeholder value")
 	}
 	return nil
 }
@@ -78,4 +78,18 @@ func RequireDatabaseURL() error {
 		return fmt.Errorf("DATABASE_URL must be set unless ALLOW_INSECURE_DEFAULTS=true")
 	}
 	return nil
+}
+
+func isWeakSecret(name, value string) bool {
+	v := strings.ToLower(strings.TrimSpace(value))
+	if v == "" || len(v) < 16 {
+		return true
+	}
+	weakFragments := []string{"change-me", "replace-with", "example", "your-", "todo", "password", "secret", "admin123456"}
+	for _, fragment := range weakFragments {
+		if strings.Contains(v, fragment) {
+			return true
+		}
+	}
+	return false
 }
