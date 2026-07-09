@@ -197,3 +197,15 @@ frp-fnos-api           deploy-api-server    Up   8080/tcp
 - 本地 client-webui 与用户端测速链路均按本地 API 要求携带 `X-Local-Token`。
 
 最终验证证据见本文件后续 `Final Security Follow-up Evidence` 章节。
+
+## Final Security Follow-up Evidence
+
+- Local commit: `8ad024d728469542d2c412e69af151505c80ab84`
+- API tests: PASS — `ALLOW_INSECURE_DEFAULTS=true go test ./apps/api-server/...`
+- Client tests: PASS — `go test ./client/frp-client/...`
+- User/Admin/Client builds: PASS — `npm run build` in `apps/user-web`, `apps/admin-web`, `apps/client-webui`
+- Compose config: PASS — standard, control, and fnOS compose files rendered successfully.
+- Release packaging: PASS — `./scripts/release.sh 0.1.6` and `./scripts/verify-release.sh 0.1.6`
+- fnOS backend hash: `c64e90f0446415a213655106d233984ff5be9d5ae0af7ea08fde0caddb55b7c4` (local `dist/fnos/api-server` and container `/app/api-server` match)
+- fnOS health checks: PASS — `http://192.168.110.56:18188/health` and `http://192.168.110.56:18189/health` returned HTTP 200.
+- Direct API CORS check: PASS — no `Access-Control-Allow-Origin` for empty or unconfigured evil origin.
