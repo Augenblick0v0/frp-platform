@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math/big"
+	"strings"
 )
 
 func randomDigits(n int) (string, error) {
@@ -45,4 +46,22 @@ func ValidateRequiredSecrets() error {
 		return fmt.Errorf("FRP_TOKEN must be set to a non-default value")
 	}
 	return nil
+}
+
+func allowedCORSOrigin(origin string) (string, bool) {
+	origin = strings.TrimSpace(origin)
+	if origin == "" {
+		return "", true
+	}
+	for _, item := range strings.Split(getenv("CORS_ALLOWED_ORIGINS", ""), ",") {
+		if strings.TrimSpace(item) == origin {
+			return origin, true
+		}
+	}
+	if getenv("ALLOW_INSECURE_DEFAULTS", "false") == "true" {
+		if strings.HasPrefix(origin, "http://localhost:") || strings.HasPrefix(origin, "http://127.0.0.1:") {
+			return origin, true
+		}
+	}
+	return "", false
 }

@@ -230,6 +230,34 @@ func TestClientTunnelsDoesNotExposeFRPToken(t *testing.T) {
 	}
 }
 
+func TestCORSRejectsUnconfiguredOrigin(t *testing.T) {
+	t.Setenv("ALLOW_INSECURE_DEFAULTS", "false")
+	t.Setenv("CORS_ALLOWED_ORIGINS", "https://panel.example.com,https://admin.example.com")
+	s := NewServer(NewStore())
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req.Header.Set("Origin", "https://evil.example.com")
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+	if got := rr.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("unexpected CORS origin %q", got)
+	}
+}
+
+func TestCORSAllowsConfiguredOrigin(t *testing.T) {
+	t.Setenv("ALLOW_INSECURE_DEFAULTS", "false")
+	t.Setenv("CORS_ALLOWED_ORIGINS", "https://panel.example.com,https://admin.example.com")
+	s := NewServer(NewStore())
+	req := httptest.NewRequest(http.MethodOptions, "/health", nil)
+	req.Header.Set("Origin", "https://panel.example.com")
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+	if got := rr.Header().Get("Access-Control-Allow-Origin"); got != "https://panel.example.com" {
+		t.Fatalf("expected configured CORS origin, got %q", got)
+	}
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected preflight 204, got %d", rr.Code)
+	}
+}
 func post(t *testing.T, s *Server, path string, body map[string]any, token string) map[string]any {
 	t.Helper()
 	b, _ := json.Marshal(body)
