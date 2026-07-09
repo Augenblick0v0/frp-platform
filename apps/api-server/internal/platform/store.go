@@ -14,14 +14,21 @@ var ErrUnauthorized = errors.New("unauthorized")
 var ErrForbidden = errors.New("forbidden")
 var ErrConflict = errors.New("conflict")
 
+const sessionTTL = 24 * time.Hour
+
+type sessionRecord struct {
+	UserID    int64
+	ExpiresAt time.Time
+}
+
 type Store struct {
 	mu              sync.Mutex
 	users           map[int64]User
 	usersByEmail    map[string]int64
 	admins          map[int64]AdminUser
 	adminsByEmail   map[string]int64
-	sessions        map[string]int64
-	adminSessions   map[string]int64
+	sessions        map[string]sessionRecord
+	adminSessions   map[string]sessionRecord
 	emailCodes      map[string]string
 	plans           map[int64]Plan
 	paymentOrders   map[string]PaymentOrder
@@ -48,7 +55,7 @@ type Store struct {
 
 func NewStore() *Store {
 	s := &Store{
-		users: map[int64]User{}, usersByEmail: map[string]int64{}, admins: map[int64]AdminUser{}, adminsByEmail: map[string]int64{}, sessions: map[string]int64{}, adminSessions: map[string]int64{}, emailCodes: map[string]string{},
+		users: map[int64]User{}, usersByEmail: map[string]int64{}, admins: map[int64]AdminUser{}, adminsByEmail: map[string]int64{}, sessions: map[string]sessionRecord{}, adminSessions: map[string]sessionRecord{}, emailCodes: map[string]string{},
 		plans: map[int64]Plan{}, paymentOrders: map[string]PaymentOrder{}, redeemCodes: map[string]RedeemCode{}, subscriptions: map[int64]Subscription{}, tunnels: map[int64]Tunnel{}, domains: map[string]int64{}, certificates: map[string]CertificateRecord{}, nodes: map[int64]Node{}, nodesByBind: map[string]int64{},
 		usedPorts: map[string]bool{}, nextUserID: 1, nextAdminID: 1, nextPlanID: 1, nextPaymentID: 1, nextTunnelID: 1, nextNodeID: 1, nextCertID: 1, nextOperationID: 1,
 		settings: Settings{PlatformDomain: "example.com", FRPEntryDomain: "frp.example.com", ServerAddr: "frp.example.com", FRPServerPort: 7000, TCPPortStart: 20000, TCPPortEnd: 29999, UDPPortStart: 30000, UDPPortEnd: 39999, PurchaseURL: "https://example.com/buy"},
@@ -79,18 +86,22 @@ func (s *Store) AdminLogin(email, password string) (string, AdminUser, error) {
 	if err != nil {
 		return "", AdminUser{}, err
 	}
-	s.adminSessions[token] = admin.ID
+	s.adminSessions[token] = sessionRecord{UserID: admin.ID, ExpiresAt: time.Now().Add(sessionTTL)}
 	return token, admin, nil
 }
 
 func (s *Store) AdminByToken(token string) (AdminUser, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	id, ok := s.adminSessions[token]
+	rec, ok := s.adminSessions[token]
 	if !ok {
 		return AdminUser{}, ErrUnauthorized
 	}
-	admin := s.admins[id]
+	if time.Now().After(rec.ExpiresAt) {
+		delete(s.adminSessions, token)
+		return AdminUser{}, ErrUnauthorized
+	}
+	admin := s.admins[rec.UserID]
 	if admin.Status != "active" {
 		return AdminUser{}, ErrUnauthorized
 	}
@@ -157,18 +168,22 @@ func (s *Store) Login(email, password string) (string, User, error) {
 	if err != nil {
 		return "", User{}, err
 	}
-	s.sessions[token] = u.ID
+	s.sessions[token] = sessionRecord{UserID: u.ID, ExpiresAt: time.Now().Add(sessionTTL)}
 	return token, u, nil
 }
 
 func (s *Store) UserByToken(token string) (User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	id, ok := s.sessions[token]
+	rec, ok := s.sessions[token]
 	if !ok {
 		return User{}, ErrUnauthorized
 	}
-	u := s.users[id]
+	if time.Now().After(rec.ExpiresAt) {
+		delete(s.sessions, token)
+		return User{}, ErrUnauthorized
+	}
+	u := s.users[rec.UserID]
 	if u.Status != "active" {
 		return User{}, ErrUnauthorized
 	}

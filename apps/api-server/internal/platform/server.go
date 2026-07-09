@@ -172,7 +172,7 @@ func (s *Server) adminLogin(w http.ResponseWriter, r *http.Request) {
 		handleErr(w, err)
 		return
 	}
-	ok(w, map[string]any{"access_token": token, "expires_in": 86400, "admin": admin})
+	ok(w, map[string]any{"access_token": token, "expires_in": int(sessionTTL.Seconds()), "admin": admin})
 }
 
 func (s *Server) adminAuth(next http.HandlerFunc) http.HandlerFunc {
@@ -236,7 +236,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		handleErr(w, err)
 		return
 	}
-	ok(w, map[string]any{"access_token": token, "expires_in": 86400, "user": u})
+	ok(w, map[string]any{"access_token": token, "expires_in": int(sessionTTL.Seconds()), "user": u})
 }
 func (s *Server) me(w http.ResponseWriter, r *http.Request, u User) { ok(w, u) }
 func (s *Server) subscription(w http.ResponseWriter, r *http.Request, u User) {

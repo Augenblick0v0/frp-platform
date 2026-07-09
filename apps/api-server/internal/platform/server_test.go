@@ -129,6 +129,28 @@ func TestAuthTokensAreNotTimestampOnly(t *testing.T) {
 	}
 }
 
+func TestInMemoryUserSessionExpires(t *testing.T) {
+	store := NewStore()
+	s := NewServer(store)
+	token := registerTestUser(t, s, store, "expire-user@example.com", "pass")
+	store.sessions[token] = sessionRecord{UserID: 1, ExpiresAt: time.Now().Add(-time.Second)}
+	rr := request(t, s, http.MethodGet, "/api/auth/me", nil, token)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected expired user session 401, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestInMemoryAdminSessionExpires(t *testing.T) {
+	store := NewStore()
+	s := NewServer(store)
+	login := post(t, s, "/api/admin/login", map[string]any{"email": "admin@example.com", "password": "admin123456"}, "")
+	token := login["access_token"].(string)
+	store.adminSessions[token] = sessionRecord{UserID: 1, ExpiresAt: time.Now().Add(-time.Second)}
+	rr := request(t, s, http.MethodGet, "/api/admin/me", nil, token)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected expired admin session 401, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
 func TestDisabledUserTokenIsRejected(t *testing.T) {
 	store := NewStore()
 	s := NewServer(store)

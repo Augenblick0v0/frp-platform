@@ -68,7 +68,7 @@ func (s *SQLStore) AdminLogin(email, password string) (string, AdminUser, error)
 	if err != nil {
 		return "", AdminUser{}, err
 	}
-	_, err = s.db.Exec(`INSERT INTO admin_sessions (token,admin_user_id,expires_at) VALUES ($1,$2,$3)`, token, admin.ID, time.Now().Add(24*time.Hour))
+	_, err = s.db.Exec(`INSERT INTO admin_sessions (token,admin_user_id,expires_at) VALUES ($1,$2,$3)`, token, admin.ID, time.Now().Add(sessionTTL))
 	if err != nil {
 		return "", AdminUser{}, err
 	}
@@ -133,7 +133,7 @@ func (s *SQLStore) Login(email, password string) (string, User, error) {
 	if err != nil {
 		return "", User{}, err
 	}
-	_, err = s.db.Exec(`INSERT INTO sessions (token,user_id,expires_at) VALUES ($1,$2,$3)`, token, u.ID, time.Now().Add(24*time.Hour))
+	_, err = s.db.Exec(`INSERT INTO sessions (token,user_id,expires_at) VALUES ($1,$2,$3)`, token, u.ID, time.Now().Add(sessionTTL))
 	if err != nil {
 		return "", User{}, err
 	}
