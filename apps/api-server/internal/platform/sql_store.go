@@ -48,10 +48,15 @@ INSERT INTO plans (id,name,description,price_cents,duration_days,traffic_limit_b
 VALUES (1,'高级套餐','支持 TCP/UDP/HTTP/HTTPS、自定义域名和自动证书',990,30,107374182400,10240,20,10,10,10,10,true,true,true,true,true,10,true,'active')
 ON CONFLICT (id) DO NOTHING;
 SELECT setval(pg_get_serial_sequence('plans','id'), GREATEST((SELECT MAX(id) FROM plans), 1));
-INSERT INTO redeem_codes (code, plan_id, status) VALUES ('DEMO-PLAN-2026', 1, 'unused') ON CONFLICT (code) DO NOTHING;
 INSERT INTO system_settings (key,value) VALUES
 ('platform_domain','example.com'),('frp_entry_domain','frp.example.com'),('server_addr','frp.example.com'),('frp_server_port','7000'),('tcp_port_start','20000'),('tcp_port_end','29999'),('udp_port_start','30000'),('udp_port_end','39999'),('purchase_url','https://example.com/buy')
 ON CONFLICT (key) DO NOTHING;`)
+	if err != nil {
+		return err
+	}
+	if InsecureDefaultsAllowed() {
+		_, err = s.db.Exec(`INSERT INTO redeem_codes (code, plan_id, status) VALUES ('DEMO-PLAN-2026', 1, 'unused') ON CONFLICT (code) DO NOTHING`)
+	}
 	return err
 }
 

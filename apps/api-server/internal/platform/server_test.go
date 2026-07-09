@@ -10,10 +10,18 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestMain(m *testing.M) {
+	if os.Getenv("ALLOW_INSECURE_DEFAULTS") == "" {
+		os.Setenv("ALLOW_INSECURE_DEFAULTS", "true")
+	}
+	os.Exit(m.Run())
+}
 
 func TestEpayCreateOrderAndNotifyActivatesPlan(t *testing.T) {
 	t.Setenv("EPAY_API_BASE", "https://pay.flwi.top")
@@ -87,6 +95,13 @@ func TestEpayNotifyRejectsBadSignature(t *testing.T) {
 	}
 }
 
+func TestNewStoreOmitsDemoRedeemCodeOutsideDevMode(t *testing.T) {
+	t.Setenv("ALLOW_INSECURE_DEFAULTS", "false")
+	store := NewStore()
+	if _, ok := store.redeemCodes["DEMO-PLAN-2026"]; ok {
+		t.Fatal("demo redeem code must be disabled outside explicit dev mode")
+	}
+}
 func TestUserRedeemAndCreateTCPTunnel(t *testing.T) {
 	store := NewStore()
 	s := NewServer(store)

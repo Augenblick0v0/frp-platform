@@ -63,7 +63,9 @@ func NewStore() *Store {
 	plan := Plan{ID: s.nextPlanID, Name: "高级套餐", Description: "支持 TCP/UDP/HTTP/HTTPS、自定义域名和自动证书", PriceCents: 990, DurationDays: 30, TrafficLimitBytes: 100 * 1024 * 1024 * 1024, BandwidthKbps: 10240, MaxTunnels: 20, MaxTCPTunnels: 10, MaxUDPTunnels: 10, MaxHTTPTunnels: 10, MaxHTTPSTunnels: 10, AllowTCP: true, AllowUDP: true, AllowHTTP: true, AllowHTTPS: true, AllowCustomDomain: true, MaxDomains: 10, AllowAutoCert: true, Status: "active"}
 	s.plans[plan.ID] = plan
 	s.nextPlanID++
-	s.redeemCodes["DEMO-PLAN-2026"] = RedeemCode{Code: "DEMO-PLAN-2026", PlanID: plan.ID, Status: "unused"}
+	if InsecureDefaultsAllowed() {
+		s.redeemCodes["DEMO-PLAN-2026"] = RedeemCode{Code: "DEMO-PLAN-2026", PlanID: plan.ID, Status: "unused"}
+	}
 	admin := AdminUser{ID: s.nextAdminID, Email: strings.ToLower(getenv("ADMIN_EMAIL", "admin@example.com")), Password: mustHashPassword(getenv("ADMIN_PASSWORD", "admin123456")), Status: "active", CreatedAt: time.Now()}
 	s.nextAdminID++
 	s.admins[admin.ID] = admin

@@ -17,6 +17,9 @@ func main() {
 	if err := platform.ValidateRequiredSecrets(); err != nil {
 		log.Fatalf("security configuration error: %v", err)
 	}
+	if err := platform.RequireDatabaseURL(); err != nil {
+		log.Fatalf("storage configuration error: %v", err)
+	}
 
 	var backend platform.Backend
 	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {

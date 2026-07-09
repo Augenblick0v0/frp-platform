@@ -36,7 +36,7 @@ func randomToken(prefix string) (string, error) {
 }
 
 func ValidateRequiredSecrets() error {
-	if getenv("ALLOW_INSECURE_DEFAULTS", "false") == "true" {
+	if InsecureDefaultsAllowed() {
 		return nil
 	}
 	if v := getenv("ADMIN_PASSWORD", ""); v == "" || v == "admin123456" {
@@ -58,10 +58,24 @@ func allowedCORSOrigin(origin string) (string, bool) {
 			return origin, true
 		}
 	}
-	if getenv("ALLOW_INSECURE_DEFAULTS", "false") == "true" {
+	if InsecureDefaultsAllowed() {
 		if strings.HasPrefix(origin, "http://localhost:") || strings.HasPrefix(origin, "http://127.0.0.1:") {
 			return origin, true
 		}
 	}
 	return "", false
+}
+
+func InsecureDefaultsAllowed() bool {
+	return strings.EqualFold(strings.TrimSpace(getenv("ALLOW_INSECURE_DEFAULTS", "false")), "true")
+}
+
+func RequireDatabaseURL() error {
+	if InsecureDefaultsAllowed() {
+		return nil
+	}
+	if strings.TrimSpace(getenv("DATABASE_URL", "")) == "" {
+		return fmt.Errorf("DATABASE_URL must be set unless ALLOW_INSECURE_DEFAULTS=true")
+	}
+	return nil
 }
