@@ -9,12 +9,21 @@ import { LogPanel } from '../../shared/frontend/components/LogPanel.jsx';
 import { CodeLine } from '../../shared/frontend/components/CopyText.jsx';
 import { ApiClient, formatMbps, formatTime } from '../../shared/frontend/api/client.js';
 
-const api = new ApiClient({ tokenKey: 'unused_local_token' });
+const api = new ApiClient({ tokenKey: 'unused_local_token', localTokenKey: 'localApiToken' });
 const routes = { status:['本机状态','本地 Client(FRPC) 和 frpc 运行状态'], sync:['配置同步','从 Master 拉取当前用户的 frpc 配置'], control:['frpc 控制','启动、停止、重启 frpc'], tunnels:['隧道列表','从 Master 预览当前用户隧道'], speed:['测速服务','本地 benchmark 和端到端测速'], logs:['日志','frpc 运行日志'], settings:['设置','API Server 和 Token 本地保存'] };
 function route(){return location.hash.replace(/^#\/?/,'')||'status';}
 function item(key,label,icon,shortLabel){return {key,label,rawLabel:label,shortLabel:shortLabel||label,icon};}
 function localSetting(k, fallback=''){ return localStorage.getItem(k) || fallback; }
-async function request(path, options={}) { return api.request(path, options); }
+async function ensureLocalToken() {
+  const current = localSetting('localApiToken', '');
+  if (current) return current;
+  const res = await fetch('/api/local-token');
+  const json = await res.json();
+  const token = json?.data?.token || '';
+  if (token) localStorage.setItem('localApiToken', token);
+  return token;
+}
+async function request(path, options={}) { await ensureLocalToken(); return api.request(path, options); }
 export default function App(){ const [current,setCurrent]=useState(route()); const [state,setState]=useState({status:null,logs:'',config:'',tunnels:[]}); useEffect(()=>{const f=()=>setCurrent(route()); window.addEventListener('hashchange',f); return()=>window.removeEventListener('hashchange',f);},[]); async function load(){ try{ const [status, logs] = await Promise.all([request('/api/status').catch(()=>null), request('/api/logs').catch(()=>({logs:''}))]); setState(s=>({...s,status,logs:logs?.logs||''})); }catch{} } useEffect(()=>{load();},[]); const key=routes[current]?current:'status'; const menu=[{type:'group',label:'本机',children:[item('status','本机状态',<AppstoreOutlined/>,'本机状态'),item('sync','配置同步',<SyncOutlined/>,'配置同步'),item('control','frpc 控制',<ControlOutlined/>,'frpc')]},{type:'group',label:'隧道',children:[item('tunnels','隧道列表',<DeploymentUnitOutlined/>,'隧道列表'),item('speed','测速服务',<ThunderboltOutlined/>,'测速服务')]},{type:'group',label:'诊断',children:[item('logs','日志',<FileTextOutlined/>),item('settings','设置',<SettingOutlined/>)]}]; return <AppShell title={routes[key][0]} subtitle={routes[key][1]} brand="FRP Client" brandSub="Local FRPC" menuItems={menu} selectedKey={key} onSelect={k=>{location.hash=k; setCurrent(k);}} onRefresh={load} userLabel="Local" onLogout={()=>{}} storageKey="clientSidebarCollapsedV4">{render(key,state,setState,load)}</AppShell>; }
 function render(key,state,setState,load){ const p={state,setState,load}; return ({status:<Status {...p}/>,sync:<ConfigSync {...p}/>,control:<Control {...p}/>,tunnels:<Tunnels {...p}/>,speed:<Speed {...p}/>,logs:<Logs {...p}/>,settings:<Settings {...p}/>})[key];}
 function Status({state}){ const st=state.status||{}; return <div className="panel-stack"><Alert showIcon type={st.running?'success':'warning'} message={st.running?'frpc 运行中':'frpc 未运行'} description="Client(FRPC) 从 Master 拉取配置，启动 frpc 后连接 Server(FRPS)。"/><div className="metric-grid"><MetricCard title="frpc" value={st.running?'running':'stopped'} /><MetricCard title="PID" value={st.pid || '-'} /><MetricCard title="Started" value={st.started_at?formatTime(st.started_at):'-'} /><MetricCard title="Config" value={st.config_path?'ready':'missing'} /></div><Card bordered={false} title="本地路径"><Descriptions column={1} bordered items={[{label:'Config',children:<CodeLine text={st.config_path||'-'}/>},{label:'Log',children:<CodeLine text={st.log_path||'-'}/>}]} /></Card></div>; }

@@ -18,11 +18,12 @@ export function unwrapResponse(json) {
 }
 
 export class ApiClient {
-  constructor({ baseURL = '', tokenKey = 'token', tokenPrefix = 'Bearer', local = false } = {}) {
+  constructor({ baseURL = '', tokenKey = 'token', tokenPrefix = 'Bearer', local = false, localTokenKey = '' } = {}) {
     this.baseURL = String(baseURL || '').replace(/\/$/, '');
     this.tokenKey = tokenKey;
     this.tokenPrefix = tokenPrefix;
     this.local = local;
+    this.localTokenKey = localTokenKey;
   }
 
   token() {
@@ -36,12 +37,19 @@ export class ApiClient {
     } catch {}
   }
 
+  localToken() {
+    if (!this.localTokenKey) return '';
+    try { return localStorage.getItem(this.localTokenKey) || ''; } catch { return ''; }
+  }
+
   async request(path, options = {}) {
     const headers = { ...(options.headers || {}) };
     const hasBody = options.body !== undefined && options.body !== null;
     if (hasBody && !(options.body instanceof FormData)) headers['Content-Type'] = headers['Content-Type'] || 'application/json';
     const token = options.token ?? this.token();
     if (token && !headers.Authorization) headers.Authorization = `${this.tokenPrefix} ${token}`;
+    const localToken = options.localToken ?? this.localToken();
+    if (localToken && !headers['X-Local-Token']) headers['X-Local-Token'] = localToken;
     const body = hasBody && typeof options.body !== 'string' && !(options.body instanceof FormData)
       ? JSON.stringify(options.body)
       : options.body;
