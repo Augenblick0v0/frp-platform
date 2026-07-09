@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${1:-${VERSION:-0.1.1}}"
+VERSION="${1:-${VERSION:-0.1.4}}"
 cd "$ROOT"
 
 echo "==> Running tests"

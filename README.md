@@ -64,6 +64,6 @@ docker compose --env-file .env.node -f docker-compose.node.yml up -d --build
 
 - 生产部署手册：`deploy/PRODUCTION.md`
 - 控制面/节点分离部署：`deploy/SPLIT_DEPLOYMENT.md`
-- 发布脚本：`./scripts/release.sh 0.1.1`
-- 发布校验：`./scripts/verify-release.sh 0.1.1`
+- 发布脚本：`./scripts/release.sh 0.1.4`
+- 发布校验：`./scripts/verify-release.sh 0.1.4`
 - 最终验收审计：`docs/FINAL_ACCEPTANCE_AUDIT.md`

@@ -3,14 +3,19 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 DIST="$ROOT/dist/windows"
 APP="$DIST/FrpTunnelClient"
-VERSION="${VERSION:-0.1.0}"
+VERSION="${VERSION:-0.1.4}"
 FRPC_WINDOWS_PATH="${FRPC_WINDOWS_PATH:-}"
 FRPC_WINDOWS_URL="${FRPC_WINDOWS_URL:-}"
 rm -rf "$DIST"
 mkdir -p "$APP/webui" "$APP/config" "$APP/logs"
 cd "$ROOT/client/frp-client"
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o "$APP/frp-client.exe" .
-cp -a "$ROOT/apps/client-webui/." "$APP/webui/"
+WEB_DIST="$ROOT/apps/client-webui/dist"
+if [[ -f "$WEB_DIST/index.html" ]]; then
+  cp -a "$WEB_DIST/." "$APP/webui/"
+else
+  cp "$ROOT/apps/client-webui/index.html" "$ROOT/apps/client-webui/style.css" "$APP/webui/"
+fi
 cat > "$APP/config/client.example.json" <<JSON
 {
   "api_base": "https://api.example.com",

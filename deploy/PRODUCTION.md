@@ -191,25 +191,25 @@ FRPS_RELOAD_CMD=<your-reload-command>
 生成发布包：
 
 ```bash
-./scripts/release.sh 0.1.1
+./scripts/release.sh 0.1.4
 ```
 
 Windows：
 
 ```text
-dist/windows/FrpTunnelClient-0.1.1-windows-amd64.zip
+dist/windows/FrpTunnelClient-0.1.4-windows-amd64.zip
 ```
 
 如果安装了 NSIS，会额外生成：
 
 ```text
-dist/windows/FrpTunnelClient-0.1.1-setup.exe
+dist/windows/FrpTunnelClient-0.1.4-setup.exe
 ```
 
 Linux：
 
 ```text
-dist/linux/FrpTunnelClient-0.1.1-linux-amd64.tar.gz
+dist/linux/FrpTunnelClient-0.1.4-linux-amd64.tar.gz
 ```
 
 ## 9. 上线验收

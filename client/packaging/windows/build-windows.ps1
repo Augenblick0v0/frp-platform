@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.1.0",
+  [string]$Version = "0.1.4",
   [string]$FrpcWindowsPath = ""
 )
 $ErrorActionPreference = "Stop"
@@ -12,8 +12,14 @@ Push-Location (Join-Path $Root "client\frp-client")
 $env:GOOS="windows"; $env:GOARCH="amd64"; $env:CGO_ENABLED="0"
 go build -ldflags "-s -w" -o (Join-Path $App "frp-client.exe") .
 Pop-Location
-Copy-Item -Recurse -Force (Join-Path $Root "apps\client-webui\*") (Join-Path $App "webui")
-@'{
+$WebDist = Join-Path $Root "apps\client-webui\dist"
+if (Test-Path (Join-Path $WebDist "index.html")) {
+  Copy-Item -Recurse -Force (Join-Path $WebDist "*") (Join-Path $App "webui")
+} else {
+  Copy-Item -Force (Join-Path $Root "apps\client-webui\index.html"), (Join-Path $Root "apps\client-webui\style.css") (Join-Path $App "webui")
+}
+@'
+{
   "api_base": "https://api.example.com",
   "local_webui": "http://127.0.0.1:18080",
   "frpc_path": "frpc.exe"
@@ -24,11 +30,13 @@ if ($FrpcWindowsPath -and (Test-Path $FrpcWindowsPath)) {
 } else {
   "请把 Windows 版 frpc.exe 放到本目录。下载地址：https://github.com/fatedier/frp/releases" | Set-Content -Encoding UTF8 (Join-Path $App "README-FRPC.txt")
 }
-'@echo off
+@'
+@echo off
 cd /d "%~dp0"
 frp-client.exe -addr 127.0.0.1:18080 -web webui -workdir "%LOCALAPPDATA%\FrpTunnelClient" -frpc "%~dp0frpc.exe"
 '@ | Set-Content -Encoding ASCII (Join-Path $App "start-client.bat")
-'@echo off
+@'
+@echo off
 start http://127.0.0.1:18080
 '@ | Set-Content -Encoding ASCII (Join-Path $App "open-webui.bat")
 Copy-Item (Join-Path $Root "client\packaging\windows\installer.nsi") (Join-Path $Dist "installer.nsi")
