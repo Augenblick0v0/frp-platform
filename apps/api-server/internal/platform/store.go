@@ -3,6 +3,7 @@ package platform
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -200,6 +201,23 @@ func (s *Store) PaymentOrderByOutTradeNo(outTradeNo string) (PaymentOrder, error
 		return PaymentOrder{}, ErrNotFound
 	}
 	return order, nil
+}
+
+func (s *Store) PaymentOrders(limit int) []PaymentOrder {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if limit <= 0 {
+		limit = 100
+	}
+	out := make([]PaymentOrder, 0, len(s.paymentOrders))
+	for _, order := range s.paymentOrders {
+		out = append(out, order)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out
 }
 
 func (s *Store) MarkPaymentOrderPaid(outTradeNo, providerTradeNo string) (PaymentOrder, Subscription, error) {
@@ -768,6 +786,19 @@ func (s *Store) Users() []User {
 		out = append(out, u)
 	}
 	return out
+}
+
+func (s *Store) ActiveSubscriptionCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	count := 0
+	for _, sub := range s.subscriptions {
+		if sub.Status == "active" && now.Before(sub.ExpiresAt) {
+			count++
+		}
+	}
+	return count
 }
 
 func (s *Store) UpdateUser(id int64, status string, planID int64) (User, Subscription, error) {

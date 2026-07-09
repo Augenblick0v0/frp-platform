@@ -17,7 +17,7 @@ import (
 
 func TestEpayCreateOrderAndNotifyActivatesPlan(t *testing.T) {
 	t.Setenv("EPAY_API_BASE", "https://pay.flwi.top")
-	t.Setenv("EPAY_PID", "743506")
+	t.Setenv("EPAY_PID", "1000")
 	t.Setenv("EPAY_KEY", "test-secret")
 	t.Setenv("PUBLIC_BASE_URL", "https://panel.example.com")
 	store := NewStore()
@@ -39,7 +39,7 @@ func TestEpayCreateOrderAndNotifyActivatesPlan(t *testing.T) {
 	}
 	outTradeNo := created["out_trade_no"].(string)
 	notify := epaySignedValues(map[string]string{
-		"pid":          "743506",
+		"pid":          "1000",
 		"trade_no":     "EPAY123",
 		"out_trade_no": outTradeNo,
 		"type":         "alipay",
@@ -58,7 +58,7 @@ func TestEpayCreateOrderAndNotifyActivatesPlan(t *testing.T) {
 }
 
 func TestEpayNotifyRejectsBadSignature(t *testing.T) {
-	t.Setenv("EPAY_PID", "743506")
+	t.Setenv("EPAY_PID", "1000")
 	t.Setenv("EPAY_KEY", "test-secret")
 	store := NewStore()
 	store.SendEmailCode("badpay@example.com", "register")
@@ -71,7 +71,7 @@ func TestEpayNotifyRejectsBadSignature(t *testing.T) {
 	}
 	s := NewServer(store)
 	rr := formRequest(t, s, "POST", "/api/payments/epay/notify", map[string]string{
-		"pid":          "743506",
+		"pid":          "1000",
 		"trade_no":     "EPAY-BAD",
 		"out_trade_no": order.OutTradeNo,
 		"type":         "alipay",
@@ -524,5 +524,80 @@ func TestClientTunnelsReturnsRuntimeFRPToken(t *testing.T) {
 	}
 	if out.Data["token"] != "test-runtime-token" {
 		t.Fatalf("expected runtime token, got %#v", out.Data["token"])
+	}
+}
+
+func TestUserTopologyExposesOnlySafeNodeFields(t *testing.T) {
+	store := NewStore()
+	s := NewServer(store)
+	post(t, s, "/api/auth/send-email-code", map[string]any{"email": "topology@example.com", "purpose": "register"}, "")
+	post(t, s, "/api/auth/register", map[string]any{"email": "topology@example.com", "code": "123456", "password": "pass"}, "")
+	login := post(t, s, "/api/auth/login", map[string]any{"email": "topology@example.com", "password": "pass"}, "")
+	token := login["access_token"].(string)
+	post(t, s, "/api/user/redeem", map[string]any{"code": "DEMO-PLAN-2026"}, token)
+	_, err := store.CreateNode(Node{Name: "edge-safe", AgentURL: "http://node-agent:8090", AgentToken: "secret-agent", BindToken: "secret-bind", FRPEntryDomain: "frp.example.com", ServerAddr: "frp.example.com", FRPServerPort: 7000, Status: "online"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rr := request(t, s, "GET", "/api/user/topology", nil, token)
+	if rr.Code != 200 {
+		t.Fatalf("topology status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if strings.Contains(body, "secret-agent") || strings.Contains(body, "secret-bind") || strings.Contains(body, "agent_token") || strings.Contains(body, "bind_token") {
+		t.Fatalf("user topology leaked node secret: %s", body)
+	}
+	var out struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Role        string     `json:"role"`
+			Nodes       []SafeNode `json:"nodes"`
+			TunnelCount int        `json:"tunnel_count"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Data.Role != "User Console" || len(out.Data.Nodes) < 2 {
+		t.Fatalf("unexpected user topology %#v", out.Data)
+	}
+}
+
+func TestAdminTopologyAndOrders(t *testing.T) {
+	t.Setenv("EPAY_PID", "1000")
+	t.Setenv("EPAY_KEY", "test-secret")
+	store := NewStore()
+	s := NewServer(store)
+	post(t, s, "/api/auth/send-email-code", map[string]any{"email": "order@example.com", "purpose": "register"}, "")
+	post(t, s, "/api/auth/register", map[string]any{"email": "order@example.com", "code": "123456", "password": "pass"}, "")
+	userLogin := post(t, s, "/api/auth/login", map[string]any{"email": "order@example.com", "password": "pass"}, "")
+	userToken := userLogin["access_token"].(string)
+	created := post(t, s, "/api/payments/epay/orders", map[string]any{"plan_id": 1, "pay_type": "wechatpay"}, userToken)
+	if created["pay_type"] != "wxpay" {
+		t.Fatalf("expected wxpay alias normalization, got %#v", created["pay_type"])
+	}
+	adminLogin := post(t, s, "/api/admin/login", map[string]any{"email": "admin@example.com", "password": "admin123456"}, "")
+	adminToken := adminLogin["access_token"].(string)
+	rr := request(t, s, "GET", "/api/admin/topology", nil, adminToken)
+	if rr.Code != 200 {
+		t.Fatalf("admin topology status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var topo struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Role           string                `json:"role"`
+			PaymentMethods []PaymentMethodStatus `json:"payment_methods"`
+			RecentOrders   []PaymentOrder        `json:"recent_orders"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &topo); err != nil {
+		t.Fatal(err)
+	}
+	if topo.Data.Role != "Admin Console" || len(topo.Data.PaymentMethods) == 0 || len(topo.Data.RecentOrders) == 0 {
+		t.Fatalf("unexpected admin topology %#v", topo.Data)
+	}
+	rr = request(t, s, "GET", "/api/admin/orders", nil, adminToken)
+	if rr.Code != 200 || !strings.Contains(rr.Body.String(), created["out_trade_no"].(string)) {
+		t.Fatalf("orders status=%d body=%s", rr.Code, rr.Body.String())
 	}
 }

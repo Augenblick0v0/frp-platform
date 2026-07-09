@@ -56,3 +56,29 @@ _Avoid_: coupon, activation key without plan
 **Payment Provider**:
 The external payment integration configured by the operator and used to generate checkout links for paid Plans.
 _Avoid_: pay button config, gateway secret
+
+## frp-panel Role Vocabulary
+
+**Master Control Plane**:
+The central API Server that owns users, plans, orders, payment provider configuration, redeem codes, tunnels, node inventory, certificates, traffic accounting, frpc configuration generation, and API-managed speed tests.
+_Avoid_: calling it a node, frps server, or client.
+
+**Server(FRPS) Node Plane**:
+A managed edge node that runs frps, node-nginx, and node-agent. It accepts Client(FRPC) connections and exposes public TCP/UDP/HTTP/HTTPS entrypoints to Visitors.
+_Avoid_: storing user package or payment state on the node.
+
+**Client(FRPC)**:
+The user's local Windows/Linux client that stores the API address and user token, pulls generated configuration from Master, starts/stops/restarts frpc, exposes local logs, and opens temporary benchmark services for API-managed Speed Tests.
+_Avoid_: admin console, server node.
+
+**Visitor**:
+Any external browser, app, or network client that accesses a public tunnel entrypoint on a Server(FRPS) node and is forwarded to the user's local service through Client(FRPC).
+_Avoid_: platform user, admin.
+
+**Admin Console**:
+The operator-facing web container for Master configuration, users, plans, orders, redeem codes, managed FRPS nodes, certificates, operation logs, and topology health.
+_Avoid_: user console, local client UI.
+
+**Role Topology**:
+A read-only summary that explains how Admin/User Console, Master, Server(FRPS), Client(FRPC), and Visitor are connected. User-facing topology must only return safe fields.
+_Avoid_: exposing node-agent token, payment secret, frps token, or admin-only fields.

@@ -1,0 +1,25 @@
+﻿export const antdTheme = {
+  token: {
+    colorPrimary: '#2563eb',
+    colorInfo: '#2563eb',
+    colorSuccess: '#16a34a',
+    colorWarning: '#d97706',
+    colorError: '#dc2626',
+    colorTextBase: '#0f172a',
+    colorTextSecondary: '#64748b',
+    colorBgLayout: '#f4f7fb',
+    colorBgContainer: '#ffffff',
+    colorBorder: '#dbe4f0',
+    borderRadius: 10,
+    fontSize: 14,
+    controlHeight: 36,
+    boxShadowTertiary: '0 10px 30px rgba(15, 23, 42, 0.06)',
+  },
+  components: {
+    Layout: { headerBg: '#ffffff', siderBg: '#ffffff' },
+    Menu: { itemBorderRadius: 8, itemSelectedBg: '#e8f1ff', itemSelectedColor: '#1d4ed8', itemHoverBg: '#f1f5f9' },
+    Card: { borderRadiusLG: 12 },
+    Table: { headerBg: '#f8fafc', rowHoverBg: '#f8fbff' },
+    Button: { borderRadius: 8 },
+  },
+};

@@ -1,4 +1,11 @@
+# fnOS single-machine deployment
+# Role mapping:
+# - api-server: Master Control Plane
+# - user-portal: User Console
+# - admin-portal: Admin Console
+# - postgres/redis: Master data plane dependencies
 services:
+  # User Console / apps/user-web
   user-portal:
     build:
       context: ..
@@ -10,6 +17,7 @@ services:
       - api-server
     restart: unless-stopped
 
+  # Admin Console / apps/admin-web
   admin-portal:
     build:
       context: ..
@@ -21,6 +29,7 @@ services:
       - api-server
     restart: unless-stopped
 
+  # Master Control Plane / apps/api-server
   api-server:
     build:
       context: ..
@@ -48,12 +57,12 @@ services:
       EPAY_KEY: ${EPAY_KEY}
       EPAY_APP_KEY: ${EPAY_APP_KEY}
       EPAY_SITE_NAME: ${EPAY_SITE_NAME}
+      EPAY_DEFAULT_PAY_TYPE: ${EPAY_DEFAULT_PAY_TYPE:-wxpay}
       FRP_TOKEN: ${FRP_TOKEN}
     depends_on:
       - postgres
       - redis
     restart: unless-stopped
-
 
   postgres:
     image: postgres:15

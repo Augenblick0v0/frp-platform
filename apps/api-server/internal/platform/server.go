@@ -53,6 +53,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/user/purchase-info", s.auth(s.purchaseInfo))
 	s.mux.HandleFunc("/api/user/traffic", s.auth(s.userTraffic))
 	s.mux.HandleFunc("/api/user/nodes", s.auth(s.userNodes))
+	s.mux.HandleFunc("/api/user/topology", s.auth(s.userTopology))
 	s.mux.HandleFunc("/api/user/certificates/request", s.auth(s.userRequestCertificate))
 	s.mux.HandleFunc("/api/tunnels", s.auth(s.tunnels))
 	s.mux.HandleFunc("/api/speed-tests/tunnels", s.auth(s.createSpeedTestTunnel))
@@ -67,12 +68,14 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/admin/login", s.adminLogin)
 	s.mux.HandleFunc("/api/admin/me", s.adminAuth(s.adminMe))
 	s.mux.HandleFunc("/api/admin/dashboard", s.adminAuth(s.adminDashboard))
+	s.mux.HandleFunc("/api/admin/topology", s.adminAuth(s.adminTopology))
 	s.mux.HandleFunc("/api/admin/plans", s.adminAuth(s.adminPlans))
 	s.mux.HandleFunc("/api/admin/plans/", s.adminAuth(s.adminPlanAction))
 	s.mux.HandleFunc("/api/admin/users", s.adminAuth(s.adminUsers))
 	s.mux.HandleFunc("/api/admin/users/", s.adminAuth(s.adminUserAction))
 	s.mux.HandleFunc("/api/admin/redeem-codes", s.adminAuth(s.adminRedeemCodes))
 	s.mux.HandleFunc("/api/admin/tunnels", s.adminAuth(s.adminTunnels))
+	s.mux.HandleFunc("/api/admin/orders", s.adminAuth(s.adminOrders))
 	s.mux.HandleFunc("/api/admin/nodes", s.adminAuth(s.adminNodes))
 	s.mux.HandleFunc("/api/admin/nodes/", s.adminAuth(s.adminNodeAction))
 	s.mux.HandleFunc("/api/admin/settings", s.adminAuth(s.adminSettings))
@@ -275,28 +278,63 @@ func (s *Server) userTraffic(w http.ResponseWriter, r *http.Request, u User) {
 	ok(w, summary)
 }
 func (s *Server) userNodes(w http.ResponseWriter, r *http.Request, u User) {
+	ok(w, s.safeNodes())
+}
+
+func (s *Server) safeNodes() []SafeNode {
 	nodes := s.store.Nodes()
-	type userNode struct {
-		ID             int64      `json:"id"`
-		Name           string     `json:"name"`
-		PublicURL      string     `json:"public_url"`
-		FRPEntryDomain string     `json:"frp_entry_domain"`
-		ServerAddr     string     `json:"server_addr"`
-		FRPServerPort  int        `json:"frp_server_port"`
-		TCPPortStart   int        `json:"tcp_port_start"`
-		TCPPortEnd     int        `json:"tcp_port_end"`
-		UDPPortStart   int        `json:"udp_port_start"`
-		UDPPortEnd     int        `json:"udp_port_end"`
-		Status         string     `json:"status"`
-		LastSeenAt     *time.Time `json:"last_seen_at,omitempty"`
-	}
-	out := make([]userNode, 0, len(nodes)+1)
+	out := make([]SafeNode, 0, len(nodes)+1)
 	st := s.store.Settings()
-	out = append(out, userNode{ID: 0, Name: "默认节点", FRPEntryDomain: st.FRPEntryDomain, ServerAddr: st.ServerAddr, FRPServerPort: st.FRPServerPort, TCPPortStart: st.TCPPortStart, TCPPortEnd: st.TCPPortEnd, UDPPortStart: st.UDPPortStart, UDPPortEnd: st.UDPPortEnd, Status: "online"})
+	out = append(out, SafeNode{ID: 0, Name: "Default Node", FRPEntryDomain: st.FRPEntryDomain, ServerAddr: st.ServerAddr, FRPServerPort: st.FRPServerPort, TCPPortStart: st.TCPPortStart, TCPPortEnd: st.TCPPortEnd, UDPPortStart: st.UDPPortStart, UDPPortEnd: st.UDPPortEnd, Status: "online"})
 	for _, n := range nodes {
-		out = append(out, userNode{ID: n.ID, Name: n.Name, PublicURL: n.PublicURL, FRPEntryDomain: n.FRPEntryDomain, ServerAddr: n.ServerAddr, FRPServerPort: n.FRPServerPort, TCPPortStart: n.TCPPortStart, TCPPortEnd: n.TCPPortEnd, UDPPortStart: n.UDPPortStart, UDPPortEnd: n.UDPPortEnd, Status: n.Status, LastSeenAt: n.LastSeenAt})
+		out = append(out, SafeNode{ID: n.ID, Name: n.Name, PublicURL: n.PublicURL, FRPEntryDomain: n.FRPEntryDomain, ServerAddr: n.ServerAddr, FRPServerPort: n.FRPServerPort, TCPPortStart: n.TCPPortStart, TCPPortEnd: n.TCPPortEnd, UDPPortStart: n.UDPPortStart, UDPPortEnd: n.UDPPortEnd, Status: n.Status, LastSeenAt: n.LastSeenAt})
 	}
-	ok(w, out)
+	return out
+}
+
+func (s *Server) userTopology(w http.ResponseWriter, r *http.Request, u User) {
+	sub, err := s.store.Subscription(u.ID)
+	if err != nil {
+		sub = Subscription{UserID: u.ID, PlanName: "Inactive", Status: "inactive"}
+	}
+	traffic, err := s.store.TrafficSummary(u.ID)
+	if err != nil {
+		left := sub.TrafficLimitBytes - sub.TrafficUsedBytes
+		if left < 0 {
+			left = 0
+		}
+		traffic = TrafficSummary{UserID: u.ID, TrafficLimitBytes: sub.TrafficLimitBytes, TrafficUsedBytes: sub.TrafficUsedBytes, TrafficLeftBytes: left}
+	}
+	tunnels := s.store.Tunnels(u.ID)
+	counts := map[string]int{}
+	activeCount := 0
+	for _, t := range tunnels {
+		if t.Status == "deleted" {
+			continue
+		}
+		activeCount++
+		counts[t.Type]++
+	}
+	ok(w, UserTopology{
+		Role:         "User Console",
+		User:         u,
+		Subscription: sub,
+		Traffic:      traffic,
+		TunnelCount:  activeCount,
+		TunnelCounts: counts,
+		Nodes:        s.safeNodes(),
+		Downloads: []DownloadArtifact{
+			{Platform: "windows", Label: "Windows Client", URL: "/downloads/windows/FrpTunnelClient-0.1.3-windows-amd64.zip"},
+			{Platform: "linux", Label: "Linux Client", URL: "/downloads/linux/FrpTunnelClient-0.1.3-linux-amd64.tar.gz"},
+		},
+		RoleFlow: []TopologyLink{
+			{From: "User Console", To: "Master", Description: "Create tunnels, purchase plans, redeem plans"},
+			{From: "Client(FRPC)", To: "Master", Description: "Fetch current user's frpc config"},
+			{From: "Client(FRPC)", To: "Server(FRPS)", Description: "Connect to FRPS node using generated config"},
+			{From: "Visitor", To: "Server(FRPS)", Description: "Access public entry and forward to local service"},
+		},
+		GeneratedAt: time.Now(),
+	})
 }
 
 func (s *Server) userRequestCertificate(w http.ResponseWriter, r *http.Request, u User) {
@@ -493,12 +531,12 @@ func (s *Server) runSpeedTestProbe(w http.ResponseWriter, r *http.Request, u Use
 
 func speedBottleneckHint(limitRatio float64) string {
 	if limitRatio >= 0.85 {
-		return "测速结果接近套餐限速，主要瓶颈可能是套餐限速或节点出口。"
+		return "Speed is close to the package limit; the likely bottleneck is package bandwidth or node egress."
 	}
 	if limitRatio > 0 {
-		return "测速结果低于套餐限速，瓶颈可能来自用户本地宽带、节点负载或网络链路。"
+		return "Speed is below the package limit; the likely bottleneck is local bandwidth, node load, or network path."
 	}
-	return "未获得有效吞吐数据，请检查本地客户端、临时隧道和节点连通性。"
+	return "No valid throughput data was collected; check the local client, temporary tunnel, and node connectivity."
 }
 
 func contextWithRequestTimeout(r *http.Request, timeout time.Duration) (context.Context, context.CancelFunc) {
@@ -525,6 +563,56 @@ func (s *Server) adminDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	ok(w, map[string]any{"total_tunnels": len(all), "tunnel_counts": counts, "online_clients": 0, "today_traffic_bytes": s.store.TotalTrafficToday()})
 }
+
+func (s *Server) paymentMethodStatuses() []PaymentMethodStatus {
+	cfg := epayFromEnv()
+	online := cfg.enabled()
+	return []PaymentMethodStatus{
+		{Provider: "epay", Method: "WeChat Pay", PayType: "wxpay", Channel: "wxpay_zg", Online: online, APIBase: cfg.BaseURL, SubmitURL: cfg.SubmitURL},
+		{Provider: "epay", Method: "Alipay", PayType: "alipay", Channel: "alipay_zg", Online: online, APIBase: cfg.BaseURL, SubmitURL: cfg.SubmitURL},
+	}
+}
+
+func (s *Server) adminTopology(w http.ResponseWriter, r *http.Request) {
+	all := s.store.AllTunnels()
+	counts := map[string]int{}
+	for _, t := range all {
+		if t.Status == "deleted" {
+			continue
+		}
+		counts[t.Type]++
+	}
+	nodes := s.store.Nodes()
+	onlineNodes := 0
+	for _, n := range nodes {
+		if n.Status == "online" {
+			onlineNodes++
+		}
+	}
+	ok(w, AdminTopology{
+		Role:                    "Admin Console",
+		UserCount:               len(s.store.Users()),
+		ActiveSubscriptionCount: s.store.ActiveSubscriptionCount(),
+		TunnelCount:             len(all),
+		TunnelCounts:            counts,
+		NodeCount:               len(nodes),
+		OnlineNodeCount:         onlineNodes,
+		TodayTrafficBytes:       s.store.TotalTrafficToday(),
+		PaymentMethods:          s.paymentMethodStatuses(),
+		RecentOrders:            s.store.PaymentOrders(20),
+		RecentOperations:        s.store.AdminOperationLogs(20),
+		Nodes:                   nodes,
+		RoleFlow: []TopologyLink{
+			{From: "Admin Console", To: "Master", Description: "Manage users, plans, orders, nodes and certificates"},
+			{From: "User Console", To: "Master", Description: "Users create tunnels, purchase plans and redeem plans"},
+			{From: "Master", To: "Server(FRPS)", Description: "Operate nodes through node-agent"},
+			{From: "Client(FRPC)", To: "Server(FRPS)", Description: "Local client connects to frps"},
+			{From: "Visitor", To: "Server(FRPS)", Description: "Access public entrypoint"},
+		},
+		GeneratedAt: time.Now(),
+	})
+}
+
 func (s *Server) adminPlans(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -584,6 +672,7 @@ func (s *Server) adminPaymentConfig(w http.ResponseWriter, r *http.Request) {
 		"public_url":       cfg.PublicURL,
 		"default_pay_type": cfg.DefaultPayType,
 		"configured_by":    "environment",
+		"methods":          s.paymentMethodStatuses(),
 	})
 }
 func (s *Server) adminUsers(w http.ResponseWriter, r *http.Request) { ok(w, s.store.Users()) }
@@ -640,6 +729,10 @@ func (s *Server) adminRedeemCodes(w http.ResponseWriter, r *http.Request) {
 	}
 }
 func (s *Server) adminTunnels(w http.ResponseWriter, r *http.Request) { ok(w, s.store.AllTunnels()) }
+
+func (s *Server) adminOrders(w http.ResponseWriter, r *http.Request) {
+	ok(w, s.store.PaymentOrders(200))
+}
 
 func (s *Server) adminCheckCNAME(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

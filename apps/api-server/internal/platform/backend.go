@@ -12,8 +12,10 @@ type Backend interface {
 	UpdatePlan(id int64, plan Plan) (Plan, error)
 	CreatePaymentOrder(order PaymentOrder) (PaymentOrder, error)
 	PaymentOrderByOutTradeNo(outTradeNo string) (PaymentOrder, error)
+	PaymentOrders(limit int) []PaymentOrder
 	MarkPaymentOrderPaid(outTradeNo, providerTradeNo string) (PaymentOrder, Subscription, error)
 	Users() []User
+	ActiveSubscriptionCount() int
 	UpdateUser(id int64, status string, planID int64) (User, Subscription, error)
 	RedeemCodes() []RedeemCode
 	CreateRedeemCodes(planID int64, count int, prefix string) ([]RedeemCode, error)

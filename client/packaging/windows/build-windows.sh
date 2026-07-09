@@ -6,11 +6,22 @@ APP="$DIST/FrpTunnelClient"
 VERSION="${VERSION:-0.1.0}"
 FRPC_WINDOWS_PATH="${FRPC_WINDOWS_PATH:-}"
 FRPC_WINDOWS_URL="${FRPC_WINDOWS_URL:-}"
+
 rm -rf "$DIST"
 mkdir -p "$APP/webui" "$APP/config" "$APP/logs"
-cd "$ROOT/client/frp-client"
-GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o "$APP/frp-client.exe" .
-cp -a "$ROOT/apps/client-webui/." "$APP/webui/"
+
+(
+  cd "$ROOT/apps/client-webui"
+  npm install
+  npm run build
+)
+
+(
+  cd "$ROOT/client/frp-client"
+  GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o "$APP/frp-client.exe" .
+)
+
+cp -a "$ROOT/apps/client-webui/dist/." "$APP/webui/"
 cat > "$APP/config/client.example.json" <<JSON
 {
   "api_base": "https://api.example.com",
@@ -18,6 +29,7 @@ cat > "$APP/config/client.example.json" <<JSON
   "frpc_path": "frpc.exe"
 }
 JSON
+
 if [[ -n "$FRPC_WINDOWS_PATH" && -f "$FRPC_WINDOWS_PATH" ]]; then
   cp "$FRPC_WINDOWS_PATH" "$APP/frpc.exe"
 elif [[ -n "$FRPC_WINDOWS_URL" ]]; then
@@ -27,11 +39,10 @@ elif [[ -n "$FRPC_WINDOWS_URL" ]]; then
   rm -f "$TMPZIP"
 else
   cat > "$APP/README-FRPC.txt" <<'TXT'
-请把 Windows 版 frpc.exe 放到本目录，或构建时设置 FRPC_WINDOWS_URL 自动下载官方 release zip。
-下载地址：https://github.com/fatedier/frp/releases
-安装包脚本会把本目录整体安装到 Program Files。
+Please place frpc.exe next to frp-client.exe, or build with FRPC_WINDOWS_URL pointing to an frp release zip.
 TXT
 fi
+
 cat > "$APP/start-client.bat" <<'BAT'
 @echo off
 cd /d "%~dp0"

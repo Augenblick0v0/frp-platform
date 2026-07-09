@@ -21,3 +21,5 @@ deploy/mail/state/
 deploy/mail/logs/
 deploy/logs/
 dist/
+output/
+_remote_frp_platform_patch/

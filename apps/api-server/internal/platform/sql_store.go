@@ -179,6 +179,25 @@ func (s *SQLStore) PaymentOrderByOutTradeNo(outTradeNo string) (PaymentOrder, er
 	return scanPaymentOrder(row)
 }
 
+func (s *SQLStore) PaymentOrders(limit int) []PaymentOrder {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.db.Query(`SELECT id,user_id,plan_id,provider,out_trade_no,coalesce(provider_trade_no,''),coalesce(pay_type,''),name,money,status,created_at,paid_at FROM payment_orders ORDER BY created_at DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := []PaymentOrder{}
+	for rows.Next() {
+		order, err := scanPaymentOrder(rows)
+		if err == nil {
+			out = append(out, order)
+		}
+	}
+	return out
+}
+
 func (s *SQLStore) MarkPaymentOrderPaid(outTradeNo, providerTradeNo string) (PaymentOrder, Subscription, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -720,6 +739,12 @@ func (s *SQLStore) Users() []User {
 		out = append(out, u)
 	}
 	return out
+}
+
+func (s *SQLStore) ActiveSubscriptionCount() int {
+	var count int
+	_ = s.db.QueryRow(`SELECT count(*) FROM subscriptions WHERE status='active' AND expires_at>now()`).Scan(&count)
+	return count
 }
 
 func (s *SQLStore) UpdateUser(id int64, status string, planID int64) (User, Subscription, error) {
