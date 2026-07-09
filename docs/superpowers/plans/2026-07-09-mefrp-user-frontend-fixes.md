@@ -185,3 +185,35 @@ git log --oneline -5
 - Spec coverage: 覆盖删除角色拓扑、简化隧道创建并支持上一步、优化测速、参考 mefrp 左侧切换与首页模板。
 - Placeholder scan: 无 TBD/TODO/implement later。
 - Type consistency: 保持现有 `api.post('/api/tunnels')` 和测速 API 字段不变。
+
+
+## Task 6: 本机 Linux 用户端部署
+
+**Files:**
+- Modify/Build: `apps/user-web/dist`
+- Runtime: local Docker service `frp-fnos-user-portal` or equivalent Linux-hosted user portal container.
+
+**Interfaces:**
+- Produces: 本机 Linux 上可访问的用户端入口。
+
+- [ ] **Step 1: 构建用户端**
+
+```bash
+cd apps/user-web && npm run build
+```
+
+- [ ] **Step 2: 部署到本机 Docker**
+
+```bash
+cd deploy && docker compose -f docker-compose.fnos.yml --env-file .env.fnos up -d --build user-portal
+```
+
+- [ ] **Step 3: 健康检查**
+
+```bash
+curl -i http://127.0.0.1:18188/health
+```
+
+- [ ] **Step 4: 浏览器截图验证**
+
+保存 `output/playwright/user-home-local-linux.png`。
