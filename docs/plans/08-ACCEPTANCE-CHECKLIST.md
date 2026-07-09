@@ -8,7 +8,7 @@
 - [x] 后台端入口 `http://192.168.110.56:18189` 返回 HTTP 200。证据：2026-07-09 `Invoke-WebRequest`。
 - [x] 用户端/后台端构建 asset SHA256 与本地 `v0.1.5` 一致。
 - [x] `/health` 通过前端 Nginx 代理返回 `status=ok`。
-- [ ] 后端容器二进制 SHA256 与本地 `dist/fnos/api-server` 一致。
+- [x] 后端容器二进制 SHA256 与本地 `dist/fnos/api-server` 一致。证据：`c64e90f0446415a213655106d233984ff5be9d5ae0af7ea08fde0caddb55b7c4`。
 
 ## 2. 安全验收
 
@@ -23,8 +23,8 @@
 
 ## 3. 发布前命令
 
-- [ ] `ALLOW_INSECURE_DEFAULTS=true go test ./apps/api-server/...`
-- [ ] `go test ./client/frp-client/...`
-- [ ] `npm run build`：`apps/user-web`、`apps/admin-web`、`apps/client-webui`
-- [ ] `docker compose config`：标准、control、fnOS compose 文件
-- [ ] GitHub Release 与 tag 已发布。
+- [x] `ALLOW_INSECURE_DEFAULTS=true go test ./apps/api-server/...`
+- [x] `go test ./client/frp-client/...`
+- [x] `npm run build`：`apps/user-web`、`apps/admin-web`、`apps/client-webui`
+- [x] `docker compose config`：标准、control、fnOS compose 文件
+- [x] GitHub Release 与 tag 已发布：`v0.1.6`。

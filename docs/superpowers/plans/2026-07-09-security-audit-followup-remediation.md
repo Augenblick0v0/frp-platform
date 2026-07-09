@@ -1,6 +1,6 @@
 # Security Audit Follow-up Remediation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 修复 2026-07-09 对 `D:/frpbusiness` 最新 `v0.1.5` 审查发现的安全漏洞、边界情况、性能/运维风险和未完成验收项。
 
@@ -69,7 +69,7 @@
 - `GET /api/client/tunnels` 不再返回 JSON 字段 `token`。
 - 本地客户端从本机环境变量 `FRP_TOKEN` 或 `FRP_CLIENT_TOKEN` 注入 frpc 配置。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `server_test.go` 增加：
 
@@ -92,7 +92,7 @@ func TestClientTunnelsDoesNotExposeFRPToken(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 确认测试失败**
+- [x] **Step 2: 确认测试失败**
 
 ```bash
 cd D:/frpbusiness
@@ -101,7 +101,7 @@ ALLOW_INSECURE_DEFAULTS=true go test ./apps/api-server/internal/platform -run Cl
 
 Expected: FAIL，因为当前响应包含 `token`。
 
-- [ ] **Step 3: 修改 API 响应**
+- [x] **Step 3: 修改 API 响应**
 
 把 `server.go:509-540` 改为不读取、不返回 `FRP_TOKEN`：
 
@@ -116,7 +116,7 @@ ok(w, map[string]any{
 })
 ```
 
-- [ ] **Step 4: 修改本地客户端同步逻辑**
+- [x] **Step 4: 修改本地客户端同步逻辑**
 
 在 `manager.go` 解码远端响应后、调用 `WriteConfig` 前加入：
 
@@ -132,7 +132,7 @@ envelope.Data.Token = localFRPToken
 return m.WriteConfig(envelope.Data)
 ```
 
-- [ ] **Step 5: 加本地配置测试**
+- [x] **Step 5: 加本地配置测试**
 
 在 `config_test.go` 增加：
 
@@ -145,7 +145,7 @@ func TestRenderFRPCConfigRequiresLocalToken(t *testing.T) {
 }
 ```
 
-- [ ] **Step 6: 跑测试**
+- [x] **Step 6: 跑测试**
 
 ```bash
 cd D:/frpbusiness
@@ -153,7 +153,7 @@ ALLOW_INSECURE_DEFAULTS=true go test ./apps/api-server/internal/platform -run Cl
 go test ./client/frp-client/internal/clientcore -run RenderFRPCConfigRequiresLocalToken -v
 ```
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add apps/api-server/internal/platform/server.go apps/api-server/internal/platform/server_test.go client/frp-client/internal/clientcore/config.go client/frp-client/internal/clientcore/manager.go client/frp-client/internal/clientcore/config_test.go
@@ -175,7 +175,7 @@ git commit -m "security: stop exposing frp token in client tunnel api"
 - 新增 `allowedCORSOrigin(origin string) (string, bool)`。
 - 新增环境变量 `CORS_ALLOWED_ORIGINS=https://panel.example.com,https://admin.example.com`。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `server_test.go` 增加：
 
@@ -194,7 +194,7 @@ func TestCORSRejectsUnconfiguredOrigin(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 实现 allowlist CORS**
+- [x] **Step 2: 实现 allowlist CORS**
 
 替换 `cors` 函数为：
 
@@ -238,7 +238,7 @@ func allowedCORSOrigin(origin string) (string, bool) {
 }
 ```
 
-- [ ] **Step 3: 更新 env 示例**
+- [x] **Step 3: 更新 env 示例**
 
 加入：
 
@@ -246,7 +246,7 @@ func allowedCORSOrigin(origin string) (string, bool) {
 CORS_ALLOWED_ORIGINS=https://panel.example.com,https://admin.example.com
 ```
 
-- [ ] **Step 4: 跑测试并提交**
+- [x] **Step 4: 跑测试并提交**
 
 ```bash
 cd D:/frpbusiness
@@ -268,7 +268,7 @@ git commit -m "security: restrict api cors origins"
 - 新增 `const sessionTTL = 24 * time.Hour`。
 - `Store.sessions` / `Store.adminSessions` 改为 `map[string]sessionRecord`。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 func TestInMemoryUserSessionExpires(t *testing.T) {
@@ -283,7 +283,7 @@ func TestInMemoryUserSessionExpires(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 实现 sessionRecord**
+- [x] **Step 2: 实现 sessionRecord**
 
 在 `store.go` 增加：
 
@@ -305,7 +305,7 @@ s.adminSessions[token] = sessionRecord{UserID: admin.ID, ExpiresAt: time.Now().A
 
 读取 token 时过期即删除并返回 `ErrUnauthorized`。
 
-- [ ] **Step 3: 登录响应使用同一 TTL**
+- [x] **Step 3: 登录响应使用同一 TTL**
 
 在 `server.go` 登录响应中使用：
 
@@ -313,7 +313,7 @@ s.adminSessions[token] = sessionRecord{UserID: admin.ID, ExpiresAt: time.Now().A
 "expires_in": int(sessionTTL.Seconds())
 ```
 
-- [ ] **Step 4: 跑测试并提交**
+- [x] **Step 4: 跑测试并提交**
 
 ```bash
 cd D:/frpbusiness
@@ -338,7 +338,7 @@ git commit -m "security: expire in-memory sessions"
 - 新增 `RequireDatabaseURL() error`。
 - 仅当 `ALLOW_INSECURE_DEFAULTS=true` 时允许内存 Store 和 `DEMO-PLAN-2026`。
 
-- [ ] **Step 1: 写数据库门禁测试**
+- [x] **Step 1: 写数据库门禁测试**
 
 创建 `cmd/server/main_test.go`：
 
@@ -359,7 +359,7 @@ func TestRequireDatabaseURLInProduction(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 实现门禁**
+- [x] **Step 2: 实现门禁**
 
 在 `security.go` 增加：
 
@@ -387,7 +387,7 @@ if err := platform.RequireDatabaseURL(); err != nil {
 }
 ```
 
-- [ ] **Step 3: 演示兑换码改为开发模式**
+- [x] **Step 3: 演示兑换码改为开发模式**
 
 在 `NewStore()` 中包裹：
 
@@ -397,7 +397,7 @@ if InsecureDefaultsAllowed() {
 }
 ```
 
-- [ ] **Step 4: 跑测试并提交**
+- [x] **Step 4: 跑测试并提交**
 
 ```bash
 cd D:/frpbusiness
@@ -421,7 +421,7 @@ git commit -m "security: require database outside explicit dev mode"
 - 新增 `NormalizeRegistrationInput(email, password string) (string, error)`。
 - 请求路径必须调用 `HashPassword` 返回错误，不调用 `mustHashPassword`。
 
-- [ ] **Step 1: 写输入校验测试**
+- [x] **Step 1: 写输入校验测试**
 
 ```go
 func TestNormalizeRegistrationInputRejectsEmptyPassword(t *testing.T) {
@@ -432,7 +432,7 @@ func TestNormalizeRegistrationInputRejectsEmptyPassword(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 实现标准化函数**
+- [x] **Step 2: 实现标准化函数**
 
 在 `password.go` 增加：
 
@@ -446,7 +446,7 @@ func NormalizeRegistrationInput(email, password string) (string, error) {
 }
 ```
 
-- [ ] **Step 3: Store/SQLStore 使用同一校验**
+- [x] **Step 3: Store/SQLStore 使用同一校验**
 
 在两处 `Register` 开头调用：
 
@@ -474,7 +474,7 @@ if err != nil {
 
 并将 `hash` 传入 SQL。
 
-- [ ] **Step 4: 跑测试并提交**
+- [x] **Step 4: 跑测试并提交**
 
 ```bash
 cd D:/frpbusiness
@@ -497,7 +497,7 @@ git commit -m "fix: validate registration before hashing password"
 - 新增 `isWeakSecret(name, value string) bool`。
 - `ValidateRequiredSecrets()` 拒绝空值、`change-me`、`replace-with-*`、`example`、短密钥。
 
-- [ ] **Step 1: 写弱密钥测试**
+- [x] **Step 1: 写弱密钥测试**
 
 ```go
 func TestValidateRequiredSecretsRejectsPlaceholders(t *testing.T) {
@@ -510,7 +510,7 @@ func TestValidateRequiredSecretsRejectsPlaceholders(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 实现弱密钥检测**
+- [x] **Step 2: 实现弱密钥检测**
 
 ```go
 func isWeakSecret(name, value string) bool {
@@ -530,7 +530,7 @@ func isWeakSecret(name, value string) bool {
 
 在 `ValidateRequiredSecrets()` 使用该函数校验 `ADMIN_PASSWORD` 与 `FRP_TOKEN`。
 
-- [ ] **Step 3: 更新 env 示例**
+- [x] **Step 3: 更新 env 示例**
 
 在 env 示例里标注：
 
@@ -540,7 +540,7 @@ FRP_TOKEN=GENERATE_WITH_OPENSSL_RAND_BASE64_32
 ADMIN_PASSWORD=GENERATE_UNIQUE_ADMIN_PASSWORD
 ```
 
-- [ ] **Step 4: 跑测试并提交**
+- [x] **Step 4: 跑测试并提交**
 
 ```bash
 cd D:/frpbusiness
@@ -562,7 +562,7 @@ git commit -m "security: reject placeholder production secrets"
 - `ApiClient` 新增 `localTokenKey`。
 - 调用本地受保护 API 时自动添加 `X-Local-Token`。
 
-- [ ] **Step 1: 扩展 ApiClient**
+- [x] **Step 1: 扩展 ApiClient**
 
 在 `ApiClient` constructor 增加：
 
@@ -592,7 +592,7 @@ const localToken = options.localToken ?? this.localToken();
 if (localToken && !headers['X-Local-Token']) headers['X-Local-Token'] = localToken;
 ```
 
-- [ ] **Step 2: 客户端 WebUI 启动时获取本地 token**
+- [x] **Step 2: 客户端 WebUI 启动时获取本地 token**
 
 在 `App.jsx` 中：
 
@@ -615,7 +615,7 @@ async function request(path, options = {}) {
 }
 ```
 
-- [ ] **Step 3: 构建验证并提交**
+- [x] **Step 3: 构建验证并提交**
 
 ```bash
 cd D:/frpbusiness/apps/client-webui
@@ -638,14 +638,14 @@ git commit -m "fix: send local token from client webui"
 - 用户端调用本地客户端 API 时必须携带 `X-Local-Token`。
 - 调用远端 Master API 时不得附带 `X-Local-Token`。
 
-- [ ] **Step 1: 定位本地客户端调用**
+- [x] **Step 1: 定位本地客户端调用**
 
 ```bash
 cd D:/frpbusiness
 powershell -NoProfile -Command "Select-String -Path apps/user-web/src/**/*.jsx,apps/user-web/src/**/*.js -Pattern '127.0.0.1|localhost|18080|speed-tests|frpc|config/sync|X-Local-Token|localApiToken' -Context 2,2"
 ```
 
-- [ ] **Step 2: 对本地调用加 token 字段与请求头**
+- [x] **Step 2: 对本地调用加 token 字段与请求头**
 
 如果发现本地 API 调用，增加表单字段：
 
@@ -664,7 +664,7 @@ headers: {
 }
 ```
 
-- [ ] **Step 3: 构建验证并提交**
+- [x] **Step 3: 构建验证并提交**
 
 ```bash
 cd D:/frpbusiness/apps/user-web
@@ -687,7 +687,7 @@ git commit -m "fix: pass local token for user speed tests"
 - 验收清单 UTF-8，一项一行，带证据。
 - 安全门禁必须覆盖 P0/P1 项。
 
-- [ ] **Step 1: 重写验收清单**
+- [x] **Step 1: 重写验收清单**
 
 用以下结构替换 `08-ACCEPTANCE-CHECKLIST.md`：
 
@@ -702,20 +702,20 @@ git commit -m "fix: pass local token for user speed tests"
 - [x] 后台端入口 `http://192.168.110.56:18189` 返回 HTTP 200。证据：2026-07-09 `Invoke-WebRequest`。
 - [x] 用户端/后台端构建 asset SHA256 与本地 `v0.1.5` 一致。
 - [x] `/health` 通过前端 Nginx 代理返回 `status=ok`。
-- [ ] 后端容器二进制 SHA256 与本地 `dist/fnos/api-server` 一致。
+- [x] 后端容器二进制 SHA256 与本地 `dist/fnos/api-server` 一致。
 
 ## 2. 安全验收
 
-- [ ] `/api/client/tunnels` 不返回 `FRP_TOKEN` 或 JSON 字段 `token`。
-- [ ] 生产环境 CORS 只允许 `CORS_ALLOWED_ORIGINS`。
-- [ ] 内存 Store 会话 24 小时后过期。
-- [ ] 生产环境缺少 `DATABASE_URL` 启动失败。
-- [ ] 空密码注册返回错误，不触发 panic。
-- [ ] 弱占位密钥启动失败。
-- [ ] 本地客户端 WebUI 调用本地受保护 API 自动携带 `X-Local-Token`。
+- [x] `/api/client/tunnels` 不返回 `FRP_TOKEN` 或 JSON 字段 `token`。
+- [x] 生产环境 CORS 只允许 `CORS_ALLOWED_ORIGINS`。
+- [x] 内存 Store 会话 24 小时后过期。
+- [x] 生产环境缺少 `DATABASE_URL` 启动失败。
+- [x] 空密码注册返回错误，不触发 panic。
+- [x] 弱占位密钥启动失败。
+- [x] 本地客户端 WebUI 调用本地受保护 API 自动携带 `X-Local-Token`。
 ```
 
-- [ ] **Step 2: 更新安全门禁**
+- [x] **Step 2: 更新安全门禁**
 
 在 `SECURITY.md` 增加：
 
@@ -731,7 +731,7 @@ git commit -m "fix: pass local token for user speed tests"
 5. 验收清单中安全验收项全部为 `[x]`。
 ```
 
-- [ ] **Step 3: 提交**
+- [x] **Step 3: 提交**
 
 ```bash
 git add docs/plans/08-ACCEPTANCE-CHECKLIST.md docs/FINAL_MEFRP_REDESIGN_ACCEPTANCE.md docs/SECURITY.md
@@ -748,7 +748,7 @@ git commit -m "docs: add security follow-up acceptance gates"
 **Interfaces:**
 - 输出本地 commit、测试结果、构建结果、飞牛部署 hash 证据。
 
-- [ ] **Step 1: 后端测试**
+- [x] **Step 1: 后端测试**
 
 ```bash
 cd D:/frpbusiness
@@ -758,7 +758,7 @@ go test ./client/frp-client/...
 
 Expected: PASS。若本机没有 Go，则在飞牛或构建容器执行并记录输出。
 
-- [ ] **Step 2: 前端构建**
+- [x] **Step 2: 前端构建**
 
 ```bash
 cd D:/frpbusiness/apps/user-web && npm run build
@@ -766,7 +766,7 @@ cd D:/frpbusiness/apps/admin-web && npm run build
 cd D:/frpbusiness/apps/client-webui && npm run build
 ```
 
-- [ ] **Step 3: Compose 校验**
+- [x] **Step 3: Compose 校验**
 
 ```bash
 cd D:/frpbusiness/deploy
@@ -775,7 +775,7 @@ docker compose --env-file .env.control.example -f docker-compose.control.yml con
 docker compose --env-file .env.example -f docker-compose.fnos.yml config
 ```
 
-- [ ] **Step 4: 飞牛后端 hash 确认**
+- [x] **Step 4: 飞牛后端 hash 确认**
 
 在飞牛执行：
 
@@ -788,14 +788,14 @@ docker exec frp-fnos-api sha256sum /app/api-server
 
 Expected: commit 为当前修复 commit；容器内 `/app/api-server` SHA256 与本地对应发布包一致。
 
-- [ ] **Step 5: HTTP 健康检查**
+- [x] **Step 5: HTTP 健康检查**
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing http://192.168.110.56:18188/health
 Invoke-WebRequest -UseBasicParsing http://192.168.110.56:18189/health
 ```
 
-- [ ] **Step 6: 记录证据并提交**
+- [x] **Step 6: 记录证据并提交**
 
 在 `FINAL_MEFRP_REDESIGN_ACCEPTANCE.md` 追加：
 

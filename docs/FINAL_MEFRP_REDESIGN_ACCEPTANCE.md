@@ -200,7 +200,7 @@ frp-fnos-api           deploy-api-server    Up   8080/tcp
 
 ## Final Security Follow-up Evidence
 
-- Local commit: `8ad024d728469542d2c412e69af151505c80ab84`
+- Local commit: `563ef23c8cbb8030a916f36eb36c93d966d5fe1c`
 - API tests: PASS — `ALLOW_INSECURE_DEFAULTS=true go test ./apps/api-server/...`
 - Client tests: PASS — `go test ./client/frp-client/...`
 - User/Admin/Client builds: PASS — `npm run build` in `apps/user-web`, `apps/admin-web`, `apps/client-webui`
