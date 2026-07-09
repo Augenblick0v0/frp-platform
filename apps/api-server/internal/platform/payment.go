@@ -44,6 +44,19 @@ func epayMoney(cents int64) string {
 	return fmt.Sprintf("%.2f", float64(cents)/100)
 }
 
+func normalizeEpayPayType(payType string) string {
+	switch strings.ToLower(strings.TrimSpace(payType)) {
+	case "", "wechat", "weixin", "weixinpay", "wechatpay", "wx", "wxpay", "wepay", "wxpay_zg", "微信", "微信支付":
+		return "wxpay"
+	case "ali", "alipay", "alipay_zg", "支付宝", "支付宝支付":
+		return "alipay"
+	case "qqpay", "qq":
+		return "qqpay"
+	default:
+		return strings.ToLower(strings.TrimSpace(payType))
+	}
+}
+
 func epaySignValues(vals map[string]string, key string) string {
 	keys := make([]string, 0, len(vals))
 	for k, v := range vals {
@@ -80,9 +93,9 @@ func epayBuildSubmitURL(submitURL string, vals map[string]string) string {
 }
 
 func newPaymentOrder(userID int64, plan Plan, payType string, defaultPayType string) PaymentOrder {
-	payType = strings.ToLower(strings.TrimSpace(payType))
+	payType = normalizeEpayPayType(payType)
 	if payType == "" {
-		payType = strings.ToLower(strings.TrimSpace(defaultPayType))
+		payType = normalizeEpayPayType(defaultPayType)
 	}
 	if payType == "" {
 		payType = "wxpay"

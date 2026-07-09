@@ -1,0 +1,14 @@
+.git
+.gitignore
+**/node_modules
+apps/*/dist
+_remote_frp_platform_patch
+output
+*.log
+.env
+deploy/.env
+deploy/.env.*
+deploy/postgres
+deploy/redis
+deploy/mail
+deploy/logs

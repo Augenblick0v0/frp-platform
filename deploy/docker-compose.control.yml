@@ -1,3 +1,5 @@
+# Control-plane deployment
+# api-server = Master Control Plane, admin-web = Admin Console, user-web = User Console
 services:
   control-nginx:
     image: nginx:1.27-alpine

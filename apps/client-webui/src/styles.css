@@ -1,0 +1,3 @@
+﻿@import '../../shared/frontend/styles/global.css';
+.client-status-line { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.config-preview { max-height: 520px; }

@@ -1,3 +1,5 @@
+# Server(FRPS) node-plane deployment
+# frps + nginx + node-agent = Server(FRPS) Node Plane
 services:
   nginx:
     image: nginx:1.27-alpine
