@@ -105,7 +105,7 @@ func (s *SQLStore) Register(email, code, password string) (User, error) {
 		return User{}, err
 	}
 	var found string
-	err := s.db.QueryRow(`SELECT code FROM email_verification_codes WHERE email=$1 AND purpose='register' AND used_at IS NULL AND expires_at>now() ORDER BY created_at DESC LIMIT 1`, email).Scan(&found)
+	err = s.db.QueryRow(`SELECT code FROM email_verification_codes WHERE email=$1 AND purpose='register' AND used_at IS NULL AND expires_at>now() ORDER BY created_at DESC LIMIT 1`, email).Scan(&found)
 	if err != nil || found != code {
 		return User{}, fmt.Errorf("invalid verification code")
 	}
