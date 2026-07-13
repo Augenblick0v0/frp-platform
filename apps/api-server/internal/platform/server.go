@@ -304,9 +304,9 @@ func (s *Server) safeNodes() []SafeNode {
 	nodes := s.store.Nodes()
 	out := make([]SafeNode, 0, len(nodes)+1)
 	st := s.store.Settings()
-	out = append(out, SafeNode{ID: 0, Name: "Default Node", FRPEntryDomain: st.FRPEntryDomain, ServerAddr: st.ServerAddr, FRPServerPort: st.FRPServerPort, TCPPortStart: st.TCPPortStart, TCPPortEnd: st.TCPPortEnd, UDPPortStart: st.UDPPortStart, UDPPortEnd: st.UDPPortEnd, Status: "online"})
+	out = append(out, SafeNode{ID: 0, Name: "Default Node", NodeKind: NodeKindFRPS, FRPEntryDomain: st.FRPEntryDomain, ServerAddr: st.ServerAddr, FRPServerPort: st.FRPServerPort, TCPPortStart: st.TCPPortStart, TCPPortEnd: st.TCPPortEnd, UDPPortStart: st.UDPPortStart, UDPPortEnd: st.UDPPortEnd, Status: "online"})
 	for _, n := range nodes {
-		out = append(out, SafeNode{ID: n.ID, Name: n.Name, PublicURL: n.PublicURL, FRPEntryDomain: n.FRPEntryDomain, ServerAddr: n.ServerAddr, FRPServerPort: n.FRPServerPort, TCPPortStart: n.TCPPortStart, TCPPortEnd: n.TCPPortEnd, UDPPortStart: n.UDPPortStart, UDPPortEnd: n.UDPPortEnd, Status: n.Status, LastSeenAt: n.LastSeenAt})
+		out = append(out, SafeNode{ID: n.ID, Name: n.Name, NodeKind: normalizeNodeKind(n.NodeKind), PublicURL: n.PublicURL, FRPEntryDomain: n.FRPEntryDomain, ServerAddr: n.ServerAddr, FRPServerPort: n.FRPServerPort, TCPPortStart: n.TCPPortStart, TCPPortEnd: n.TCPPortEnd, UDPPortStart: n.UDPPortStart, UDPPortEnd: n.UDPPortEnd, NATProvider: n.NATProvider, NATInstanceName: n.NATInstanceName, NATEntryHost: n.NATEntryHost, Status: n.Status, LastSeenAt: n.LastSeenAt})
 	}
 	return out
 }

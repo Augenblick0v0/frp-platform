@@ -246,6 +246,7 @@ CREATE INDEX IF NOT EXISTS idx_traffic_user_time ON traffic_logs(user_id, record
 CREATE TABLE IF NOT EXISTS nodes (
     id BIGSERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
+    node_kind VARCHAR(32) NOT NULL DEFAULT 'frps',
     agent_url TEXT,
     agent_token TEXT NOT NULL,
     bind_token TEXT NOT NULL UNIQUE,
@@ -257,12 +258,21 @@ CREATE TABLE IF NOT EXISTS nodes (
     tcp_port_end INTEGER NOT NULL DEFAULT 29999,
     udp_port_start INTEGER NOT NULL DEFAULT 30000,
     udp_port_end INTEGER NOT NULL DEFAULT 39999,
+    nat_provider VARCHAR(32),
+    nat_instance_id TEXT,
+    nat_instance_name TEXT,
+    nat_entry_host TEXT,
     status VARCHAR(32) NOT NULL DEFAULT 'pending',
     last_seen_at TIMESTAMPTZ,
     last_error TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE IF EXISTS nodes ADD COLUMN IF NOT EXISTS node_kind VARCHAR(32) NOT NULL DEFAULT 'frps';
+ALTER TABLE IF EXISTS nodes ADD COLUMN IF NOT EXISTS nat_provider VARCHAR(32);
+ALTER TABLE IF EXISTS nodes ADD COLUMN IF NOT EXISTS nat_instance_id TEXT;
+ALTER TABLE IF EXISTS nodes ADD COLUMN IF NOT EXISTS nat_instance_name TEXT;
+ALTER TABLE IF EXISTS nodes ADD COLUMN IF NOT EXISTS nat_entry_host TEXT;
 CREATE INDEX IF NOT EXISTS idx_nodes_status ON nodes(status);
 
 CREATE TABLE IF NOT EXISTS system_settings (

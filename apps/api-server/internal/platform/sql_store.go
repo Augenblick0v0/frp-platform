@@ -343,11 +343,14 @@ func (s *SQLStore) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
 		return Tunnel{}, err
 	}
 	st := s.Settings()
+	var node Node
 	if req.NodeID > 0 {
-		node, err := s.Node(req.NodeID)
+		var err error
+		node, err = s.Node(req.NodeID)
 		if err != nil {
 			return Tunnel{}, err
 		}
+		node = normalizeNodeForSave(node)
 		st = settingsFromNode(st, node)
 	}
 	typ := strings.ToLower(req.Type)
@@ -370,6 +373,13 @@ func (s *SQLStore) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
 		t.RemotePort = port
 		t.Status = "active"
 		t.PublicURL = fmt.Sprintf("%s:%d", st.ServerAddr, port)
+		if req.NodeID > 0 && node.NodeKind == NodeKindNarwhalNAT {
+			publicURL, err := applyNATForward(node, "tcp", port, t.Name)
+			if err != nil {
+				return Tunnel{}, err
+			}
+			t.PublicURL = publicURL
+		}
 	case "udp":
 		if !sub.AllowUDP {
 			return Tunnel{}, ErrForbidden
@@ -381,6 +391,13 @@ func (s *SQLStore) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
 		t.RemotePort = port
 		t.Status = "active"
 		t.PublicURL = fmt.Sprintf("%s:%d", st.ServerAddr, port)
+		if req.NodeID > 0 && node.NodeKind == NodeKindNarwhalNAT {
+			publicURL, err := applyNATForward(node, "udp", port, t.Name)
+			if err != nil {
+				return Tunnel{}, err
+			}
+			t.PublicURL = publicURL
+		}
 	case "http", "https":
 		if !sub.AllowCustomDomain {
 			return Tunnel{}, ErrForbidden
@@ -443,11 +460,13 @@ func (s *SQLStore) CreateSpeedTestTunnel(userID int64, req SpeedTestTunnelReques
 		return SpeedTestTunnel{}, fmt.Errorf("speed test bandwidth limit is inherited from subscription")
 	}
 	st := s.Settings()
+	var node Node
 	if req.NodeID > 0 {
-		node, err := s.Node(req.NodeID)
+		node, err = s.Node(req.NodeID)
 		if err != nil {
 			return SpeedTestTunnel{}, err
 		}
+		node = normalizeNodeForSave(node)
 		st = settingsFromNode(st, node)
 	}
 	tx, err := s.db.Begin()
@@ -456,7 +475,7 @@ func (s *SQLStore) CreateSpeedTestTunnel(userID int64, req SpeedTestTunnelReques
 	}
 	defer tx.Rollback()
 	expires := time.Now().Add(15 * time.Minute)
-	t := Tunnel{UserID: userID, NodeID: req.NodeID, Type: typ, LocalHost: req.LocalHost, LocalPort: req.LocalPort, BandwidthKbps: 0, EffectiveBandwidthKbps: sub.BandwidthKbps, SpeedTest: true, ExpiresAt: &expires, Status: "active"}
+	t := Tunnel{UserID: userID, NodeID: req.NodeID, Name: fmt.Sprintf("__speedtest_%s_%d", typ, time.Now().UnixNano()), Type: typ, LocalHost: req.LocalHost, LocalPort: req.LocalPort, BandwidthKbps: 0, EffectiveBandwidthKbps: sub.BandwidthKbps, SpeedTest: true, ExpiresAt: &expires, Status: "active"}
 	switch typ {
 	case "tcp":
 		if !sub.AllowTCP {
@@ -468,6 +487,13 @@ func (s *SQLStore) CreateSpeedTestTunnel(userID int64, req SpeedTestTunnelReques
 		}
 		t.RemotePort = port
 		t.PublicURL = fmt.Sprintf("%s:%d", st.ServerAddr, port)
+		if req.NodeID > 0 && node.NodeKind == NodeKindNarwhalNAT {
+			publicURL, err := applyNATForward(node, "tcp", port, t.Name)
+			if err != nil {
+				return SpeedTestTunnel{}, err
+			}
+			t.PublicURL = publicURL
+		}
 	case "udp":
 		if !sub.AllowUDP {
 			return SpeedTestTunnel{}, ErrForbidden
@@ -478,6 +504,13 @@ func (s *SQLStore) CreateSpeedTestTunnel(userID int64, req SpeedTestTunnelReques
 		}
 		t.RemotePort = port
 		t.PublicURL = fmt.Sprintf("%s:%d", st.ServerAddr, port)
+		if req.NodeID > 0 && node.NodeKind == NodeKindNarwhalNAT {
+			publicURL, err := applyNATForward(node, "udp", port, t.Name)
+			if err != nil {
+				return SpeedTestTunnel{}, err
+			}
+			t.PublicURL = publicURL
+		}
 	case "http", "https":
 		if typ == "http" && !sub.AllowHTTP {
 			return SpeedTestTunnel{}, ErrForbidden
@@ -676,7 +709,7 @@ func (s *SQLStore) queryTunnels(suffix string, args ...any) []Tunnel {
 }
 
 func (s *SQLStore) Nodes() []Node {
-	rows, err := s.db.Query(`SELECT id,name,coalesce(agent_url,''),agent_token,bind_token,coalesce(public_url,''),coalesce(frp_entry_domain,''),coalesce(server_addr,''),frp_server_port,tcp_port_start,tcp_port_end,udp_port_start,udp_port_end,status,last_seen_at,coalesce(last_error,''),created_at,updated_at FROM nodes ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id,name,coalesce(node_kind,'frps'),coalesce(agent_url,''),agent_token,bind_token,coalesce(public_url,''),coalesce(frp_entry_domain,''),coalesce(server_addr,''),frp_server_port,tcp_port_start,tcp_port_end,udp_port_start,udp_port_end,coalesce(nat_provider,''),coalesce(nat_instance_id,''),coalesce(nat_instance_name,''),coalesce(nat_entry_host,''),status,last_seen_at,coalesce(last_error,''),created_at,updated_at FROM nodes ORDER BY id`)
 	if err != nil {
 		return nil
 	}
@@ -692,10 +725,11 @@ func (s *SQLStore) Nodes() []Node {
 }
 
 func (s *SQLStore) Node(id int64) (Node, error) {
-	return scanNode(s.db.QueryRow(`SELECT id,name,coalesce(agent_url,''),agent_token,bind_token,coalesce(public_url,''),coalesce(frp_entry_domain,''),coalesce(server_addr,''),frp_server_port,tcp_port_start,tcp_port_end,udp_port_start,udp_port_end,status,last_seen_at,coalesce(last_error,''),created_at,updated_at FROM nodes WHERE id=$1`, id))
+	return scanNode(s.db.QueryRow(`SELECT id,name,coalesce(node_kind,'frps'),coalesce(agent_url,''),agent_token,bind_token,coalesce(public_url,''),coalesce(frp_entry_domain,''),coalesce(server_addr,''),frp_server_port,tcp_port_start,tcp_port_end,udp_port_start,udp_port_end,coalesce(nat_provider,''),coalesce(nat_instance_id,''),coalesce(nat_instance_name,''),coalesce(nat_entry_host,''),status,last_seen_at,coalesce(last_error,''),created_at,updated_at FROM nodes WHERE id=$1`, id))
 }
 
 func (s *SQLStore) CreateNode(node Node) (Node, error) {
+	node = normalizeNodeForSave(node)
 	if strings.TrimSpace(node.Name) == "" {
 		node.Name = "node"
 	}
@@ -731,9 +765,9 @@ func (s *SQLStore) CreateNode(node Node) (Node, error) {
 		}
 		node.AgentToken = token
 	}
-	return scanNode(s.db.QueryRow(`INSERT INTO nodes (name,agent_url,agent_token,bind_token,public_url,frp_entry_domain,server_addr,frp_server_port,tcp_port_start,tcp_port_end,udp_port_start,udp_port_end,status)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-RETURNING id,name,coalesce(agent_url,''),agent_token,bind_token,coalesce(public_url,''),coalesce(frp_entry_domain,''),coalesce(server_addr,''),frp_server_port,tcp_port_start,tcp_port_end,udp_port_start,udp_port_end,status,last_seen_at,coalesce(last_error,''),created_at,updated_at`, node.Name, node.AgentURL, node.AgentToken, node.BindToken, node.PublicURL, node.FRPEntryDomain, node.ServerAddr, node.FRPServerPort, node.TCPPortStart, node.TCPPortEnd, node.UDPPortStart, node.UDPPortEnd, node.Status))
+	return scanNode(s.db.QueryRow(`INSERT INTO nodes (name,node_kind,agent_url,agent_token,bind_token,public_url,frp_entry_domain,server_addr,frp_server_port,tcp_port_start,tcp_port_end,udp_port_start,udp_port_end,nat_provider,nat_instance_id,nat_instance_name,nat_entry_host,status)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+RETURNING id,name,coalesce(node_kind,'frps'),coalesce(agent_url,''),agent_token,bind_token,coalesce(public_url,''),coalesce(frp_entry_domain,''),coalesce(server_addr,''),frp_server_port,tcp_port_start,tcp_port_end,udp_port_start,udp_port_end,coalesce(nat_provider,''),coalesce(nat_instance_id,''),coalesce(nat_instance_name,''),coalesce(nat_entry_host,''),status,last_seen_at,coalesce(last_error,''),created_at,updated_at`, node.Name, node.NodeKind, node.AgentURL, node.AgentToken, node.BindToken, node.PublicURL, node.FRPEntryDomain, node.ServerAddr, node.FRPServerPort, node.TCPPortStart, node.TCPPortEnd, node.UDPPortStart, node.UDPPortEnd, node.NATProvider, node.NATInstanceID, node.NATInstanceName, node.NATEntryHost, node.Status))
 }
 
 func (s *SQLStore) DeleteNode(id int64) error {
@@ -754,36 +788,46 @@ func (s *SQLStore) BindNode(req NodeBindRequest) (Node, error) {
 		return Node{}, err
 	}
 	res, err := s.db.Exec(`UPDATE nodes SET
-bind_token=$13,
+bind_token=$18,
 name=COALESCE(NULLIF($2,''),name),
-agent_url=COALESCE(NULLIF($3,''),agent_url),
-public_url=COALESCE(NULLIF($4,''),public_url),
-frp_entry_domain=COALESCE(NULLIF($5,''),frp_entry_domain),
-server_addr=COALESCE(NULLIF($6,''),server_addr),
-frp_server_port=CASE WHEN $7>0 THEN $7 ELSE frp_server_port END,
-tcp_port_start=CASE WHEN $8>0 THEN $8 ELSE tcp_port_start END,
-tcp_port_end=CASE WHEN $9>0 THEN $9 ELSE tcp_port_end END,
-udp_port_start=CASE WHEN $10>0 THEN $10 ELSE udp_port_start END,
-udp_port_end=CASE WHEN $11>0 THEN $11 ELSE udp_port_end END,
-status='online', last_error='', last_seen_at=$12, updated_at=$12
-WHERE bind_token=$1`, strings.TrimSpace(req.BindToken), strings.TrimSpace(req.Name), strings.TrimRight(strings.TrimSpace(req.AgentURL), "/"), strings.TrimRight(strings.TrimSpace(req.PublicURL), "/"), strings.TrimSpace(req.FRPEntryDomain), strings.TrimSpace(req.ServerAddr), req.FRPServerPort, req.TCPPortStart, req.TCPPortEnd, req.UDPPortStart, req.UDPPortEnd, now, newBindToken)
+node_kind=COALESCE(NULLIF($3,''),node_kind),
+agent_url=COALESCE(NULLIF($4,''),agent_url),
+public_url=COALESCE(NULLIF($5,''),public_url),
+frp_entry_domain=COALESCE(NULLIF($6,''),frp_entry_domain),
+server_addr=COALESCE(NULLIF($7,''),server_addr),
+frp_server_port=CASE WHEN $8>0 THEN $8 ELSE frp_server_port END,
+tcp_port_start=CASE WHEN $9>0 THEN $9 ELSE tcp_port_start END,
+tcp_port_end=CASE WHEN $10>0 THEN $10 ELSE tcp_port_end END,
+udp_port_start=CASE WHEN $11>0 THEN $11 ELSE udp_port_start END,
+udp_port_end=CASE WHEN $12>0 THEN $12 ELSE udp_port_end END,
+nat_provider=COALESCE(NULLIF($13,''),nat_provider),
+nat_instance_id=COALESCE(NULLIF($14,''),nat_instance_id),
+nat_instance_name=COALESCE(NULLIF($15,''),nat_instance_name),
+nat_entry_host=COALESCE(NULLIF($16,''),nat_entry_host),
+status='online', last_error='', last_seen_at=$17, updated_at=$17
+WHERE bind_token=$1`, strings.TrimSpace(req.BindToken), strings.TrimSpace(req.Name), (func() string {
+		if strings.TrimSpace(req.NodeKind) == "" {
+			return ""
+		}
+		return normalizeNodeKind(req.NodeKind)
+	})(), strings.TrimRight(strings.TrimSpace(req.AgentURL), "/"), strings.TrimRight(strings.TrimSpace(req.PublicURL), "/"), strings.TrimSpace(req.FRPEntryDomain), strings.TrimSpace(req.ServerAddr), req.FRPServerPort, req.TCPPortStart, req.TCPPortEnd, req.UDPPortStart, req.UDPPortEnd, strings.ToLower(strings.TrimSpace(req.NATProvider)), strings.TrimSpace(req.NATInstanceID), strings.TrimSpace(req.NATInstanceName), strings.TrimSpace(req.NATEntryHost), now, newBindToken)
 	if err != nil {
 		return Node{}, err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return Node{}, ErrUnauthorized
 	}
-	return scanNode(s.db.QueryRow(`SELECT id,name,coalesce(agent_url,''),agent_token,bind_token,coalesce(public_url,''),coalesce(frp_entry_domain,''),coalesce(server_addr,''),frp_server_port,tcp_port_start,tcp_port_end,udp_port_start,udp_port_end,status,last_seen_at,coalesce(last_error,''),created_at,updated_at FROM nodes WHERE bind_token=$1`, newBindToken))
+	return scanNode(s.db.QueryRow(`SELECT id,name,coalesce(node_kind,'frps'),coalesce(agent_url,''),agent_token,bind_token,coalesce(public_url,''),coalesce(frp_entry_domain,''),coalesce(server_addr,''),frp_server_port,tcp_port_start,tcp_port_end,udp_port_start,udp_port_end,coalesce(nat_provider,''),coalesce(nat_instance_id,''),coalesce(nat_instance_name,''),coalesce(nat_entry_host,''),status,last_seen_at,coalesce(last_error,''),created_at,updated_at FROM nodes WHERE bind_token=$1`, newBindToken))
 }
 
 func (s *SQLStore) UpdateNodeStatus(id int64, status string, lastError string) (Node, error) {
-	return scanNode(s.db.QueryRow(`UPDATE nodes SET status=$2,last_error=$3,last_seen_at=CASE WHEN $2='online' THEN now() ELSE last_seen_at END,updated_at=now() WHERE id=$1 RETURNING id,name,coalesce(agent_url,''),agent_token,bind_token,coalesce(public_url,''),coalesce(frp_entry_domain,''),coalesce(server_addr,''),frp_server_port,tcp_port_start,tcp_port_end,udp_port_start,udp_port_end,status,last_seen_at,coalesce(last_error,''),created_at,updated_at`, id, status, lastError))
+	return scanNode(s.db.QueryRow(`UPDATE nodes SET status=$2,last_error=$3,last_seen_at=CASE WHEN $2='online' THEN now() ELSE last_seen_at END,updated_at=now() WHERE id=$1 RETURNING id,name,coalesce(node_kind,'frps'),coalesce(agent_url,''),agent_token,bind_token,coalesce(public_url,''),coalesce(frp_entry_domain,''),coalesce(server_addr,''),frp_server_port,tcp_port_start,tcp_port_end,udp_port_start,udp_port_end,coalesce(nat_provider,''),coalesce(nat_instance_id,''),coalesce(nat_instance_name,''),coalesce(nat_entry_host,''),status,last_seen_at,coalesce(last_error,''),created_at,updated_at`, id, status, lastError))
 }
 
 func scanNode(scanner interface{ Scan(dest ...any) error }) (Node, error) {
 	var n Node
 	var seen sql.NullTime
-	err := scanner.Scan(&n.ID, &n.Name, &n.AgentURL, &n.AgentToken, &n.BindToken, &n.PublicURL, &n.FRPEntryDomain, &n.ServerAddr, &n.FRPServerPort, &n.TCPPortStart, &n.TCPPortEnd, &n.UDPPortStart, &n.UDPPortEnd, &n.Status, &seen, &n.LastError, &n.CreatedAt, &n.UpdatedAt)
+	err := scanner.Scan(&n.ID, &n.Name, &n.NodeKind, &n.AgentURL, &n.AgentToken, &n.BindToken, &n.PublicURL, &n.FRPEntryDomain, &n.ServerAddr, &n.FRPServerPort, &n.TCPPortStart, &n.TCPPortEnd, &n.UDPPortStart, &n.UDPPortEnd, &n.NATProvider, &n.NATInstanceID, &n.NATInstanceName, &n.NATEntryHost, &n.Status, &seen, &n.LastError, &n.CreatedAt, &n.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Node{}, ErrNotFound
@@ -793,7 +837,7 @@ func scanNode(scanner interface{ Scan(dest ...any) error }) (Node, error) {
 	if seen.Valid {
 		n.LastSeenAt = &seen.Time
 	}
-	return n, nil
+	return normalizeNodeForSave(n), nil
 }
 
 func (s *SQLStore) Settings() Settings {

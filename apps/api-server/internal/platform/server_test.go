@@ -787,3 +787,41 @@ func TestAdminTopologyAndOrders(t *testing.T) {
 		t.Fatalf("orders status=%d body=%s", rr.Code, rr.Body.String())
 	}
 }
+
+type fakeNATForwarder struct{ calls []NATPortForwardRequest }
+
+func (f *fakeNATForwarder) ForwardPort(req NATPortForwardRequest) (NATPortForwardResult, error) {
+	f.calls = append(f.calls, req)
+	return NATPortForwardResult{EntryHost: req.Node.NATEntryHost, HostPort: req.GuestPort + 10000, GuestPort: req.GuestPort, Protocol: req.Protocol, Provider: NATProviderNarwhal, InstanceID: req.Node.NATInstanceID}, nil
+}
+
+func TestNarwhalNATNodeCreatesPortForwardAndKeepsInternalRemotePort(t *testing.T) {
+	fake := &fakeNATForwarder{}
+	restore := SetNATPortForwarderForTest(fake)
+	defer restore()
+	store := NewStore()
+	s := NewServer(store)
+	token := registerTestUser(t, s, store, "nat@example.com", "pass")
+	post(t, s, "/api/user/redeem", map[string]any{"code": "DEMO-PLAN-2026"}, token)
+	u, err := store.UserByToken(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node, err := store.CreateNode(Node{Name: "jp-nat", NodeKind: NodeKindNarwhalNAT, ServerAddr: "10.0.0.2", TCPPortStart: 21000, TCPPortEnd: 21000, NATProvider: NATProviderNarwhal, NATInstanceID: "vm-jp", NATInstanceName: "日本", NATEntryHost: "jp.achkck.cc.cd"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tun, err := store.CreateTunnel(u.ID, Tunnel{Name: "local-5666", NodeID: node.ID, Type: "tcp", LocalHost: "127.0.0.1", LocalPort: 5666})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tun.RemotePort != 21000 {
+		t.Fatalf("remote_port should stay the frps internal port, got %d", tun.RemotePort)
+	}
+	if tun.PublicURL != "jp.achkck.cc.cd:31000" {
+		t.Fatalf("public URL should use NAT external port, got %q", tun.PublicURL)
+	}
+	if len(fake.calls) != 1 || fake.calls[0].GuestPort != 21000 || fake.calls[0].Protocol != "tcp" {
+		t.Fatalf("unexpected NAT calls: %#v", fake.calls)
+	}
+}

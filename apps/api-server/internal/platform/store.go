@@ -355,6 +355,7 @@ func (s *Store) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
 		if !ok {
 			return Tunnel{}, ErrNotFound
 		}
+		node = normalizeNodeForSave(node)
 		nodeSettings = settingsFromNode(s.settings, node)
 	}
 	t := Tunnel{ID: s.nextTunnelID, UserID: userID, NodeID: req.NodeID, Name: req.Name, Type: typ, LocalHost: req.LocalHost, LocalPort: req.LocalPort, UseHTTPS: req.UseHTTPS, BandwidthKbps: req.BandwidthKbps, CreatedAt: time.Now()}
@@ -371,6 +372,16 @@ func (s *Store) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
 		t.RemotePort = port
 		t.Status = "active"
 		t.PublicURL = fmt.Sprintf("%s:%d", nodeSettings.ServerAddr, port)
+		if req.NodeID > 0 {
+			if node, ok := s.nodes[req.NodeID]; ok && normalizeNodeKind(node.NodeKind) == NodeKindNarwhalNAT {
+				publicURL, err := applyNATForward(node, "tcp", port, t.Name)
+				if err != nil {
+					delete(s.usedPorts, portKey(req.NodeID, "tcp", port))
+					return Tunnel{}, err
+				}
+				t.PublicURL = publicURL
+			}
+		}
 	case "udp":
 		if !sub.AllowUDP {
 			return Tunnel{}, ErrForbidden
@@ -382,6 +393,16 @@ func (s *Store) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
 		t.RemotePort = port
 		t.Status = "active"
 		t.PublicURL = fmt.Sprintf("%s:%d", nodeSettings.ServerAddr, port)
+		if req.NodeID > 0 {
+			if node, ok := s.nodes[req.NodeID]; ok && normalizeNodeKind(node.NodeKind) == NodeKindNarwhalNAT {
+				publicURL, err := applyNATForward(node, "udp", port, t.Name)
+				if err != nil {
+					delete(s.usedPorts, portKey(req.NodeID, "udp", port))
+					return Tunnel{}, err
+				}
+				t.PublicURL = publicURL
+			}
+		}
 	case "http", "https":
 		if !sub.AllowCustomDomain {
 			return Tunnel{}, ErrForbidden
@@ -441,6 +462,7 @@ func (s *Store) CreateSpeedTestTunnel(userID int64, req SpeedTestTunnelRequest) 
 		if !ok {
 			return SpeedTestTunnel{}, ErrNotFound
 		}
+		node = normalizeNodeForSave(node)
 		nodeSettings = settingsFromNode(s.settings, node)
 	}
 	expires := time.Now().Add(15 * time.Minute)
@@ -458,6 +480,16 @@ func (s *Store) CreateSpeedTestTunnel(userID int64, req SpeedTestTunnelRequest) 
 		t.RemotePort = port
 		t.Status = "active"
 		t.PublicURL = fmt.Sprintf("%s:%d", nodeSettings.ServerAddr, port)
+		if req.NodeID > 0 {
+			if node, ok := s.nodes[req.NodeID]; ok && normalizeNodeKind(node.NodeKind) == NodeKindNarwhalNAT {
+				publicURL, err := applyNATForward(node, "tcp", port, t.Name)
+				if err != nil {
+					delete(s.usedPorts, portKey(req.NodeID, "tcp", port))
+					return SpeedTestTunnel{}, err
+				}
+				t.PublicURL = publicURL
+			}
+		}
 	case "udp":
 		if !sub.AllowUDP {
 			return SpeedTestTunnel{}, ErrForbidden
@@ -469,6 +501,16 @@ func (s *Store) CreateSpeedTestTunnel(userID int64, req SpeedTestTunnelRequest) 
 		t.RemotePort = port
 		t.Status = "active"
 		t.PublicURL = fmt.Sprintf("%s:%d", nodeSettings.ServerAddr, port)
+		if req.NodeID > 0 {
+			if node, ok := s.nodes[req.NodeID]; ok && normalizeNodeKind(node.NodeKind) == NodeKindNarwhalNAT {
+				publicURL, err := applyNATForward(node, "udp", port, t.Name)
+				if err != nil {
+					delete(s.usedPorts, portKey(req.NodeID, "udp", port))
+					return SpeedTestTunnel{}, err
+				}
+				t.PublicURL = publicURL
+			}
+		}
 	case "http", "https":
 		if typ == "http" && !sub.AllowHTTP {
 			return SpeedTestTunnel{}, ErrForbidden
@@ -750,6 +792,7 @@ func (s *Store) Node(id int64) (Node, error) {
 func (s *Store) CreateNode(node Node) (Node, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	node = normalizeNodeForSave(node)
 	now := time.Now()
 	if strings.TrimSpace(node.Name) == "" {
 		node.Name = fmt.Sprintf("node-%d", s.nextNodeID)
@@ -826,6 +869,9 @@ func (s *Store) BindNode(req NodeBindRequest) (Node, error) {
 	if strings.TrimSpace(req.Name) != "" {
 		n.Name = strings.TrimSpace(req.Name)
 	}
+	if strings.TrimSpace(req.NodeKind) != "" {
+		n.NodeKind = normalizeNodeKind(req.NodeKind)
+	}
 	if strings.TrimSpace(req.AgentURL) != "" {
 		n.AgentURL = strings.TrimRight(strings.TrimSpace(req.AgentURL), "/")
 	}
@@ -853,6 +899,19 @@ func (s *Store) BindNode(req NodeBindRequest) (Node, error) {
 	if req.UDPPortEnd > 0 {
 		n.UDPPortEnd = req.UDPPortEnd
 	}
+	if strings.TrimSpace(req.NATProvider) != "" {
+		n.NATProvider = strings.ToLower(strings.TrimSpace(req.NATProvider))
+	}
+	if strings.TrimSpace(req.NATInstanceID) != "" {
+		n.NATInstanceID = strings.TrimSpace(req.NATInstanceID)
+	}
+	if strings.TrimSpace(req.NATInstanceName) != "" {
+		n.NATInstanceName = strings.TrimSpace(req.NATInstanceName)
+	}
+	if strings.TrimSpace(req.NATEntryHost) != "" {
+		n.NATEntryHost = strings.TrimSpace(req.NATEntryHost)
+	}
+	n = normalizeNodeForSave(n)
 	n.Status = "online"
 	n.LastError = ""
 	n.LastSeenAt = &now

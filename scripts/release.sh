@@ -54,6 +54,8 @@ sha256sum -c SHA256SUMS-${VERSION}.txt
 
 ## Highlights
 
+- Added Narwhal Cloud NAT node type for automatic TCP/UDP port-forward allocation on new tunnels.
+- Improved admin/user node flows so NAT nodes are clearly labeled and explain their forwarding behavior.
 - Hardened API request limits, timeouts, method checks, node binding, and production traffic reporting.
 - Serialized SQL tunnel quota allocation to prevent concurrent over-allocation.
 - Protected local status and log APIs and switched sensitive client files to atomic private writes.

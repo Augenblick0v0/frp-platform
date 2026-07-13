@@ -115,38 +115,48 @@ type Settings struct {
 }
 
 type Node struct {
-	ID             int64      `json:"id"`
-	Name           string     `json:"name"`
-	AgentURL       string     `json:"agent_url"`
-	AgentToken     string     `json:"-"`
-	BindToken      string     `json:"bind_token,omitempty"`
-	PublicURL      string     `json:"public_url"`
-	FRPEntryDomain string     `json:"frp_entry_domain"`
-	ServerAddr     string     `json:"server_addr"`
-	FRPServerPort  int        `json:"frp_server_port"`
-	TCPPortStart   int        `json:"tcp_port_start"`
-	TCPPortEnd     int        `json:"tcp_port_end"`
-	UDPPortStart   int        `json:"udp_port_start"`
-	UDPPortEnd     int        `json:"udp_port_end"`
-	Status         string     `json:"status"`
-	LastSeenAt     *time.Time `json:"last_seen_at,omitempty"`
-	LastError      string     `json:"last_error,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID              int64      `json:"id"`
+	Name            string     `json:"name"`
+	NodeKind        string     `json:"node_kind"`
+	AgentURL        string     `json:"agent_url"`
+	AgentToken      string     `json:"-"`
+	BindToken       string     `json:"bind_token,omitempty"`
+	PublicURL       string     `json:"public_url"`
+	FRPEntryDomain  string     `json:"frp_entry_domain"`
+	ServerAddr      string     `json:"server_addr"`
+	FRPServerPort   int        `json:"frp_server_port"`
+	TCPPortStart    int        `json:"tcp_port_start"`
+	TCPPortEnd      int        `json:"tcp_port_end"`
+	UDPPortStart    int        `json:"udp_port_start"`
+	UDPPortEnd      int        `json:"udp_port_end"`
+	NATProvider     string     `json:"nat_provider,omitempty"`
+	NATInstanceID   string     `json:"nat_instance_id,omitempty"`
+	NATInstanceName string     `json:"nat_instance_name,omitempty"`
+	NATEntryHost    string     `json:"nat_entry_host,omitempty"`
+	Status          string     `json:"status"`
+	LastSeenAt      *time.Time `json:"last_seen_at,omitempty"`
+	LastError       string     `json:"last_error,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
 type NodeBindRequest struct {
-	BindToken      string `json:"bind_token"`
-	Name           string `json:"name"`
-	AgentURL       string `json:"agent_url"`
-	PublicURL      string `json:"public_url"`
-	FRPEntryDomain string `json:"frp_entry_domain"`
-	ServerAddr     string `json:"server_addr"`
-	FRPServerPort  int    `json:"frp_server_port"`
-	TCPPortStart   int    `json:"tcp_port_start"`
-	TCPPortEnd     int    `json:"tcp_port_end"`
-	UDPPortStart   int    `json:"udp_port_start"`
-	UDPPortEnd     int    `json:"udp_port_end"`
+	BindToken       string `json:"bind_token"`
+	Name            string `json:"name"`
+	NodeKind        string `json:"node_kind"`
+	AgentURL        string `json:"agent_url"`
+	PublicURL       string `json:"public_url"`
+	FRPEntryDomain  string `json:"frp_entry_domain"`
+	ServerAddr      string `json:"server_addr"`
+	FRPServerPort   int    `json:"frp_server_port"`
+	TCPPortStart    int    `json:"tcp_port_start"`
+	TCPPortEnd      int    `json:"tcp_port_end"`
+	UDPPortStart    int    `json:"udp_port_start"`
+	UDPPortEnd      int    `json:"udp_port_end"`
+	NATProvider     string `json:"nat_provider"`
+	NATInstanceID   string `json:"nat_instance_id"`
+	NATInstanceName string `json:"nat_instance_name"`
+	NATEntryHost    string `json:"nat_entry_host"`
 }
 
 type TrafficReport struct {
@@ -245,18 +255,22 @@ type AdminOperationLog struct {
 }
 
 type SafeNode struct {
-	ID             int64      `json:"id"`
-	Name           string     `json:"name"`
-	PublicURL      string     `json:"public_url"`
-	FRPEntryDomain string     `json:"frp_entry_domain"`
-	ServerAddr     string     `json:"server_addr"`
-	FRPServerPort  int        `json:"frp_server_port"`
-	TCPPortStart   int        `json:"tcp_port_start"`
-	TCPPortEnd     int        `json:"tcp_port_end"`
-	UDPPortStart   int        `json:"udp_port_start"`
-	UDPPortEnd     int        `json:"udp_port_end"`
-	Status         string     `json:"status"`
-	LastSeenAt     *time.Time `json:"last_seen_at,omitempty"`
+	ID              int64      `json:"id"`
+	Name            string     `json:"name"`
+	NodeKind        string     `json:"node_kind"`
+	PublicURL       string     `json:"public_url"`
+	FRPEntryDomain  string     `json:"frp_entry_domain"`
+	ServerAddr      string     `json:"server_addr"`
+	FRPServerPort   int        `json:"frp_server_port"`
+	TCPPortStart    int        `json:"tcp_port_start"`
+	TCPPortEnd      int        `json:"tcp_port_end"`
+	UDPPortStart    int        `json:"udp_port_start"`
+	UDPPortEnd      int        `json:"udp_port_end"`
+	NATProvider     string     `json:"nat_provider,omitempty"`
+	NATInstanceName string     `json:"nat_instance_name,omitempty"`
+	NATEntryHost    string     `json:"nat_entry_host,omitempty"`
+	Status          string     `json:"status"`
+	LastSeenAt      *time.Time `json:"last_seen_at,omitempty"`
 }
 
 type TopologyLink struct {
