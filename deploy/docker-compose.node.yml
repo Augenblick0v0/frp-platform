@@ -18,7 +18,7 @@ services:
     restart: unless-stopped
 
   frps:
-    image: snowdreamtech/frps:latest
+    image: snowdreamtech/frps@sha256:a615a3e42f174050fbd902a989f9c21eed2dc0b016932d10ab599743cca0e41a
     entrypoint: ["/bin/sh", "-ec"]
     container_name: frp-node-frps
     command: [": \"$${FRP_TOKEN:?FRP_TOKEN is required}\"; sed \"s/__REPLACE_WITH_FRP_TOKEN__/$${FRP_TOKEN}/g\" /etc/frp/frps.template.toml > /tmp/frps.toml; exec /usr/bin/frps -c /tmp/frps.toml"]
@@ -40,9 +40,10 @@ services:
     container_name: frp-node-agent
     environment:
       NODE_AGENT_ADDR: ":8090"
-      NODE_AGENT_TOKEN: ${NODE_AGENT_TOKEN}
-      NODE_BIND_TOKEN: ${NODE_BIND_TOKEN}
-      CONTROL_PLANE_URL: ${CONTROL_PLANE_URL}
+      NODE_AGENT_TOKEN: ${NODE_AGENT_TOKEN:-}
+      NODE_AGENT_TOKEN_FILE: /app/runtime/node-agent/agent_token
+      NODE_BIND_TOKEN: ${NODE_BIND_TOKEN:-}
+      CONTROL_PLANE_URL: ${CONTROL_PLANE_URL:-}
       NGINX_CONF_DIR: /app/runtime/nginx-conf.d
       ACME_WEBROOT: /var/www/certbot
       LETSENCRYPT_DIR: /etc/letsencrypt
@@ -64,6 +65,7 @@ services:
       - ./certbot/letsencrypt:/etc/letsencrypt
       - ./frps:/app/runtime/frps:ro
       - ./logs/frps:/app/runtime/logs/frps
+      - ./node-agent:/app/runtime/node-agent
     depends_on:
       - nginx
       - frps

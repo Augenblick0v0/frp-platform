@@ -29,16 +29,18 @@ function Login({ onAuthed }) {
 }
 export default function App() {
   const [current, setCurrent] = useState(route());
-  const [data, setData] = useState({ loading: true, admin: null, topology: null, plans: [], users: [], redeem: [], tunnels: [], nodes: [], certs: [], settings: null, payment: null, orders: [], operations: [] });
+  const [data, setData] = useState({ loading: true, loadError: '', admin: null, topology: null, plans: [], users: [], redeem: [], tunnels: [], nodes: [], certs: [], settings: null, payment: null, orders: [], operations: [] });
   const [operation, setOperation] = useState(null);
   useEffect(() => { const f = () => setCurrent(route()); window.addEventListener('hashchange', f); return () => window.removeEventListener('hashchange', f); }, []);
   async function load() {
     if (!api.token()) { setData(d => ({ ...d, loading: false, admin: null })); return; }
     try {
+      let partial = false;
+      const optional = (promise, fallback) => promise.catch(() => { partial = true; return fallback; });
       const [admin, topology, plans, users, redeem, tunnels, nodes, certs, settings, payment, orders, operations] = await Promise.all([
-        api.get('/api/admin/me'), api.get('/api/admin/topology').catch(() => null), api.get('/api/admin/plans').catch(() => []), api.get('/api/admin/users').catch(() => []), api.get('/api/admin/redeem-codes').catch(() => []), api.get('/api/admin/tunnels').catch(() => []), api.get('/api/admin/nodes').catch(() => []), api.get('/api/admin/certificates').catch(() => []), api.get('/api/admin/settings').catch(() => null), api.get('/api/admin/payment-config').catch(() => null), api.get('/api/admin/orders').catch(() => []), api.get('/api/admin/operation-logs').catch(() => [])
+        api.get('/api/admin/me'), optional(api.get('/api/admin/topology'), null), optional(api.get('/api/admin/plans'), []), optional(api.get('/api/admin/users'), []), optional(api.get('/api/admin/redeem-codes'), []), optional(api.get('/api/admin/tunnels'), []), optional(api.get('/api/admin/nodes'), []), optional(api.get('/api/admin/certificates'), []), optional(api.get('/api/admin/settings'), null), optional(api.get('/api/admin/payment-config'), null), optional(api.get('/api/admin/orders'), []), optional(api.get('/api/admin/operation-logs'), [])
       ]);
-      setData({ loading: false, admin, topology, plans, users, redeem, tunnels, nodes, certs, settings, payment, orders, operations });
+      setData({ loading: false, loadError: partial ? '部分后台数据加载失败，请刷新重试' : '', admin, topology, plans, users, redeem, tunnels, nodes, certs, settings, payment, orders, operations });
     } catch(e) { api.setToken(''); setData(d => ({ ...d, loading: false, admin: null })); }
   }
   useEffect(() => { load(); }, []);
@@ -50,6 +52,7 @@ export default function App() {
     { type: 'group', label: '资源', children: [item('tunnels', '隧道管理', <DeploymentUnitOutlined />, '隧道管理'), item('nodes', 'FRPS 节点', <CloudServerOutlined />, '节点管理'), item('certificates', '域名证书', <SafetyCertificateOutlined />, '域名证书')] }
   ];
   return <AppShell title={routes[key][0]} subtitle={routes[key][1]} brand="FRP Admin" brandSub="Master Control" menuItems={menu} selectedKey={key} onSelect={k => { location.hash = k; setCurrent(k); }} onRefresh={load} userLabel={data.admin.email} onLogout={() => { api.setToken(''); location.hash='login'; }} storageKey="adminSidebarCollapsedV4">
+    {data.loadError && <Alert type="warning" showIcon message={data.loadError} style={{ marginBottom: 16 }} />}
     {render(key, data, load, operation, setOperation)}
   </AppShell>;
 }

@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"frp-platform/apps/api-server/internal/platform"
 )
@@ -39,5 +40,14 @@ func main() {
 	platform.StartCertificateRenewalScheduler(context.Background(), backend, automation)
 	srv := platform.NewServerWithServices(backend, platform.MailerFromEnv(), automation, platform.FRPSManagerFromEnv())
 	log.Printf("frp-platform api-server listening on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, srv.Handler()))
+	httpServer := &http.Server{
+		Addr:              addr,
+		Handler:           srv.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    32 << 10,
+	}
+	log.Fatal(httpServer.ListenAndServe())
 }

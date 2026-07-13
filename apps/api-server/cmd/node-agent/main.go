@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +24,12 @@ type nodeAgent struct {
 
 func main() {
 	token := strings.TrimSpace(os.Getenv("NODE_AGENT_TOKEN"))
+	tokenFile := getenv("NODE_AGENT_TOKEN_FILE", "/app/runtime/node-agent/agent_token")
+	if token == "" {
+		if data, err := os.ReadFile(tokenFile); err == nil {
+			token = strings.TrimSpace(string(data))
+		}
+	}
 	bindToken := strings.TrimSpace(os.Getenv("NODE_BIND_TOKEN"))
 	if token == "" && bindToken == "" {
 		log.Fatal("NODE_AGENT_TOKEN or NODE_BIND_TOKEN is required")
@@ -37,6 +45,9 @@ func main() {
 		}
 		if strings.TrimSpace(a.token) == "" {
 			log.Fatal("initial node bind did not return NODE_AGENT_TOKEN")
+		}
+		if err := writePrivateFile(tokenFile, []byte(a.token+"\n")); err != nil {
+			log.Fatalf("persist node agent token: %v", err)
 		}
 	}
 	mux := http.NewServeMux()
@@ -54,9 +65,45 @@ func main() {
 	mux.HandleFunc("/api/frps/restart", a.auth(a.frpsRestart))
 	mux.HandleFunc("/api/frps/reload", a.auth(a.frpsReload))
 	addr := getenv("NODE_AGENT_ADDR", ":8090")
-	go a.bindLoop()
 	log.Printf("node-agent listening on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, mux))
+	httpServer := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    32 << 10,
+	}
+	log.Fatal(httpServer.ListenAndServe())
+}
+
+func writePrivateFile(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".node-token-*")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	defer os.Remove(name)
+	if err := tmp.Chmod(0600); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(name, path)
 }
 
 func (a *nodeAgent) bindLoop() {
@@ -251,8 +298,16 @@ func (a *nodeAgent) frpsReload(w http.ResponseWriter, r *http.Request) {
 }
 
 func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
-	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+	defer r.Body.Close()
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(v); err != nil {
 		writeError(w, 400, "BAD_JSON", err.Error())
+		return false
+	}
+	var extra any
+	if err := dec.Decode(&extra); err != io.EOF {
+		writeError(w, 400, "BAD_JSON", "request body contains trailing data")
 		return false
 	}
 	return true

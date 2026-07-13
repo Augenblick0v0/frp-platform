@@ -45,6 +45,9 @@ func ValidateRequiredSecrets() error {
 	if isWeakSecret("FRP_TOKEN", getenv("FRP_TOKEN", "")) {
 		return fmt.Errorf("FRP_TOKEN must be set to a strong non-placeholder value")
 	}
+	if strings.EqualFold(strings.TrimSpace(getenv("SMTP_SKIP_VERIFY", "false")), "true") {
+		return fmt.Errorf("SMTP_SKIP_VERIFY must be false outside explicit insecure development mode")
+	}
 	return nil
 }
 

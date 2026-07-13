@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,16 +24,26 @@ func NewLocalServer(manager *Manager, webDir string) *LocalServer {
 func (s *LocalServer) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, map[string]any{"status": "ok"}) })
-	mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, s.manager.Status()) })
+	mux.HandleFunc("/api/status", s.requireLocalToken(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, s.manager.Status())
+	}))
 	mux.HandleFunc("/api/local-token", s.localToken)
-	mux.HandleFunc("/api/logs", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/logs", s.requireLocalToken(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
 		logs, err := s.manager.Logs(32768)
 		if err != nil {
 			writeError(w, 500, err)
 			return
 		}
 		writeJSON(w, map[string]any{"logs": logs})
-	})
+	}))
 	mux.HandleFunc("/api/config/render", s.requireLocalToken(s.renderConfig))
 	mux.HandleFunc("/api/config/sync", s.requireLocalToken(s.syncConfig))
 	mux.HandleFunc("/api/speed-tests/prepare", s.requireLocalToken(s.prepareSpeedTest))
@@ -120,7 +131,9 @@ func (s *LocalServer) prepareSpeedTest(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Type string `json:"type"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&in)
+	if !decodeJSON(w, r, &in) {
+		return
+	}
 	bench, err := s.manager.PrepareSpeedBenchmark(in.Type)
 	if err != nil {
 		writeError(w, 400, err)
@@ -159,8 +172,7 @@ func (s *LocalServer) reportTraffic(w http.ResponseWriter, r *http.Request) {
 		Token   string          `json:"token"`
 		Reports []TrafficReport `json:"reports"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		writeError(w, 400, err)
+	if !decodeJSON(w, r, &in) {
 		return
 	}
 	body, _ := json.Marshal(map[string]any{"reports": in.Reports})
@@ -194,8 +206,7 @@ func (s *LocalServer) runSpeedTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in SpeedTestRunRequest
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		writeError(w, 400, err)
+	if !decodeJSON(w, r, &in) {
 		return
 	}
 	timeout := in.DurationSeconds + 30
@@ -221,8 +232,7 @@ func (s *LocalServer) renderConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var cfg ServerConfig
-	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
-		writeError(w, 400, err)
+	if !decodeJSON(w, r, &cfg) {
 		return
 	}
 	text, err := s.manager.WriteConfig(cfg)
@@ -242,8 +252,7 @@ func (s *LocalServer) syncConfig(w http.ResponseWriter, r *http.Request) {
 		Token       string `json:"token"`
 		SpeedTestID int64  `json:"speed_test_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		writeError(w, 400, err)
+	if !decodeJSON(w, r, &in) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
@@ -304,4 +313,20 @@ func writeError(w http.ResponseWriter, status int, err error) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "message": fmt.Sprint(err)})
+}
+
+func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
+	defer r.Body.Close()
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(dst); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return false
+	}
+	var extra any
+	if err := dec.Decode(&extra); err != io.EOF {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("request body contains trailing data"))
+		return false
+	}
+	return true
 }

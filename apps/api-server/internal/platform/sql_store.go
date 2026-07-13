@@ -301,7 +301,15 @@ func (s *SQLStore) Redeem(userID int64, code string) (Subscription, error) {
 }
 
 func (s *SQLStore) Subscription(userID int64) (Subscription, error) {
-	row := s.db.QueryRow(`SELECT plan_id,coalesce(nullif(plan_name,''),'plan'),traffic_limit_bytes,traffic_used_bytes,bandwidth_limit_kbps,allow_tcp,allow_udp,allow_http,allow_https,allow_custom_domain,allow_auto_cert,max_tunnels,max_tcp_tunnels,max_udp_tunnels,max_http_tunnels,max_https_tunnels,max_domains,status,expires_at FROM subscriptions WHERE user_id=$1 AND status='active' ORDER BY expires_at DESC LIMIT 1`, userID)
+	return subscriptionFromQuery(s.db, userID)
+}
+
+type queryRower interface {
+	QueryRow(query string, args ...any) *sql.Row
+}
+
+func subscriptionFromQuery(q queryRower, userID int64) (Subscription, error) {
+	row := q.QueryRow(`SELECT plan_id,coalesce(nullif(plan_name,''),'plan'),traffic_limit_bytes,traffic_used_bytes,bandwidth_limit_kbps,allow_tcp,allow_udp,allow_http,allow_https,allow_custom_domain,allow_auto_cert,max_tunnels,max_tcp_tunnels,max_udp_tunnels,max_http_tunnels,max_https_tunnels,max_domains,status,expires_at FROM subscriptions WHERE user_id=$1 AND status='active' ORDER BY expires_at DESC LIMIT 1`, userID)
 	var sub Subscription
 	err := row.Scan(&sub.PlanID, &sub.PlanName, &sub.TrafficLimitBytes, &sub.TrafficUsedBytes, &sub.BandwidthKbps, &sub.AllowTCP, &sub.AllowUDP, &sub.AllowHTTP, &sub.AllowHTTPS, &sub.AllowCustomDomain, &sub.AllowAutoCert, &sub.MaxTunnels, &sub.MaxTCPTunnels, &sub.MaxUDPTunnels, &sub.MaxHTTPTunnels, &sub.MaxHTTPSTunnels, &sub.MaxDomains, &sub.Status, &sub.ExpiresAt)
 	if err != nil {
@@ -316,14 +324,22 @@ func (s *SQLStore) Subscription(userID int64) (Subscription, error) {
 
 func (s *SQLStore) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
 	s.CleanupExpiredSpeedTestTunnels(time.Now())
-	sub, err := s.Subscription(userID)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return Tunnel{}, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock($1)`, userID); err != nil {
+		return Tunnel{}, err
+	}
+	sub, err := subscriptionFromQuery(tx, userID)
 	if err != nil || sub.Status != "active" {
 		return Tunnel{}, ErrForbidden
 	}
 	if sub.TrafficLimitBytes > 0 && sub.TrafficUsedBytes >= sub.TrafficLimitBytes {
 		return Tunnel{}, ErrForbidden
 	}
-	if err := s.checkSQLTunnelLimits(userID, sub, strings.ToLower(req.Type)); err != nil {
+	if err := checkSQLTunnelLimitsTx(tx, userID, sub, strings.ToLower(req.Type)); err != nil {
 		return Tunnel{}, err
 	}
 	st := s.Settings()
@@ -341,11 +357,6 @@ func (s *SQLStore) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
 	if err := validateTunnelBandwidth(sub, req.BandwidthKbps); err != nil {
 		return Tunnel{}, err
 	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return Tunnel{}, err
-	}
-	defer tx.Rollback()
 	t := Tunnel{UserID: userID, NodeID: req.NodeID, Name: req.Name, Type: typ, LocalHost: req.LocalHost, LocalPort: req.LocalPort, UseHTTPS: req.UseHTTPS, BandwidthKbps: req.BandwidthKbps, EffectiveBandwidthKbps: effectiveBandwidth(sub.BandwidthKbps, req.BandwidthKbps), CreatedAt: time.Now()}
 	switch typ {
 	case "tcp":
@@ -738,7 +749,12 @@ func (s *SQLStore) DeleteNode(id int64) error {
 
 func (s *SQLStore) BindNode(req NodeBindRequest) (Node, error) {
 	now := time.Now()
+	newBindToken, err := randomToken("node-bind")
+	if err != nil {
+		return Node{}, err
+	}
 	res, err := s.db.Exec(`UPDATE nodes SET
+bind_token=$13,
 name=COALESCE(NULLIF($2,''),name),
 agent_url=COALESCE(NULLIF($3,''),agent_url),
 public_url=COALESCE(NULLIF($4,''),public_url),
@@ -750,14 +766,14 @@ tcp_port_end=CASE WHEN $9>0 THEN $9 ELSE tcp_port_end END,
 udp_port_start=CASE WHEN $10>0 THEN $10 ELSE udp_port_start END,
 udp_port_end=CASE WHEN $11>0 THEN $11 ELSE udp_port_end END,
 status='online', last_error='', last_seen_at=$12, updated_at=$12
-WHERE bind_token=$1`, strings.TrimSpace(req.BindToken), strings.TrimSpace(req.Name), strings.TrimRight(strings.TrimSpace(req.AgentURL), "/"), strings.TrimRight(strings.TrimSpace(req.PublicURL), "/"), strings.TrimSpace(req.FRPEntryDomain), strings.TrimSpace(req.ServerAddr), req.FRPServerPort, req.TCPPortStart, req.TCPPortEnd, req.UDPPortStart, req.UDPPortEnd, now)
+WHERE bind_token=$1`, strings.TrimSpace(req.BindToken), strings.TrimSpace(req.Name), strings.TrimRight(strings.TrimSpace(req.AgentURL), "/"), strings.TrimRight(strings.TrimSpace(req.PublicURL), "/"), strings.TrimSpace(req.FRPEntryDomain), strings.TrimSpace(req.ServerAddr), req.FRPServerPort, req.TCPPortStart, req.TCPPortEnd, req.UDPPortStart, req.UDPPortEnd, now, newBindToken)
 	if err != nil {
 		return Node{}, err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return Node{}, ErrUnauthorized
 	}
-	return scanNode(s.db.QueryRow(`SELECT id,name,coalesce(agent_url,''),agent_token,bind_token,coalesce(public_url,''),coalesce(frp_entry_domain,''),coalesce(server_addr,''),frp_server_port,tcp_port_start,tcp_port_end,udp_port_start,udp_port_end,status,last_seen_at,coalesce(last_error,''),created_at,updated_at FROM nodes WHERE bind_token=$1`, strings.TrimSpace(req.BindToken)))
+	return scanNode(s.db.QueryRow(`SELECT id,name,coalesce(agent_url,''),agent_token,bind_token,coalesce(public_url,''),coalesce(frp_entry_domain,''),coalesce(server_addr,''),frp_server_port,tcp_port_start,tcp_port_end,udp_port_start,udp_port_end,status,last_seen_at,coalesce(last_error,''),created_at,updated_at FROM nodes WHERE bind_token=$1`, newBindToken))
 }
 
 func (s *SQLStore) UpdateNodeStatus(id int64, status string, lastError string) (Node, error) {
@@ -974,8 +990,8 @@ func (s *SQLStore) CreateRedeemCodes(planID int64, count int, prefix string) ([]
 	return out, nil
 }
 
-func (s *SQLStore) checkSQLTunnelLimits(userID int64, sub Subscription, typ string) error {
-	rows, err := s.db.Query(`SELECT type, count(*) FROM tunnels WHERE user_id=$1 AND status NOT IN ('deleted','disabled') GROUP BY type`, userID)
+func checkSQLTunnelLimitsTx(tx *sql.Tx, userID int64, sub Subscription, typ string) error {
+	rows, err := tx.Query(`SELECT type, count(*) FROM tunnels WHERE user_id=$1 AND status NOT IN ('deleted','disabled') AND speed_test=false GROUP BY type`, userID)
 	if err != nil {
 		return err
 	}

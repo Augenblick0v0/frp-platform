@@ -21,7 +21,7 @@ services:
     restart: unless-stopped
 
   frps:
-    image: snowdreamtech/frps:latest
+    image: snowdreamtech/frps@sha256:a615a3e42f174050fbd902a989f9c21eed2dc0b016932d10ab599743cca0e41a
     entrypoint: ["/bin/sh", "-ec"]
     container_name: frp-platform-frps
     command: [": \"$${FRP_TOKEN:?FRP_TOKEN is required}\"; sed \"s/__REPLACE_WITH_FRP_TOKEN__/$${FRP_TOKEN}/g\" /etc/frp/frps.template.toml > /tmp/frps.toml; exec /usr/bin/frps -c /tmp/frps.toml"]
@@ -131,7 +131,7 @@ services:
 
 
   mail-server:
-    image: docker.io/mailserver/docker-mailserver:latest
+    image: docker.io/mailserver/docker-mailserver:15.1.0
     container_name: frp-platform-mail
     hostname: mail
     domainname: ${PLATFORM_DOMAIN}

@@ -1,6 +1,9 @@
 package platform
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestHashAndVerifyPassword(t *testing.T) {
 	hash, err := HashPassword("secret")
@@ -57,5 +60,15 @@ func TestValidateRequiredSecretsAcceptsStrongValues(t *testing.T) {
 	t.Setenv("FRP_TOKEN", "Zx7Yp2Lm9Qw4Er8Ty1Ui5Op3As6Df0Gh")
 	if err := ValidateRequiredSecrets(); err != nil {
 		t.Fatalf("expected strong values to pass, got %v", err)
+	}
+}
+
+func TestValidateRequiredSecretsRejectsSMTPTLSSkipVerify(t *testing.T) {
+	t.Setenv("ALLOW_INSECURE_DEFAULTS", "false")
+	t.Setenv("ADMIN_PASSWORD", "A7xQ9mL2vN8kR4tZ6pW3")
+	t.Setenv("FRP_TOKEN", "Zx7Yp2Lm9Qw4Er8Ty1Ui5Op3As6Df0Gh")
+	t.Setenv("SMTP_SKIP_VERIFY", "true")
+	if err := ValidateRequiredSecrets(); err == nil || !strings.Contains(err.Error(), "SMTP_SKIP_VERIFY") {
+		t.Fatalf("expected SMTP_SKIP_VERIFY rejection, got %v", err)
 	}
 }

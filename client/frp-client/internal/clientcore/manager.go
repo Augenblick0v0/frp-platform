@@ -29,6 +29,8 @@ type Manager struct {
 }
 
 func (m *Manager) LocalAPIToken() (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	path := filepath.Join(m.workDir, "local_api_token")
 	if b, err := os.ReadFile(path); err == nil {
 		if token := strings.TrimSpace(string(b)); token != "" {
@@ -39,7 +41,7 @@ func (m *Manager) LocalAPIToken() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(path, []byte(token+"\n"), 0600); err != nil {
+	if err := atomicWriteFile(path, []byte(token+"\n"), 0600); err != nil {
 		return "", err
 	}
 	return token, nil
@@ -68,10 +70,10 @@ func NewManager(workDir, frpcPath string) (*Manager, error) {
 	if frpcPath == "" {
 		frpcPath = "frpc"
 	}
-	if err := os.MkdirAll(workDir, 0755); err != nil {
+	if err := os.MkdirAll(workDir, 0700); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(filepath.Join(workDir, "logs"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(workDir, "logs"), 0700); err != nil {
 		return nil, err
 	}
 	return &Manager{workDir: workDir, frpcPath: frpcPath, configPath: filepath.Join(workDir, "frpc.toml"), logPath: filepath.Join(workDir, "logs", "frpc.log")}, nil
@@ -95,7 +97,7 @@ func (m *Manager) WriteConfig(cfg ServerConfig) (string, error) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if err := os.WriteFile(m.configPath, []byte(text), 0600); err != nil {
+	if err := atomicWriteFile(m.configPath, []byte(text), 0600); err != nil {
 		return "", err
 	}
 	return text, nil
@@ -164,7 +166,7 @@ func (m *Manager) Start() error {
 	if _, err := os.Stat(m.configPath); err != nil {
 		return fmt.Errorf("frpc config not found: %s", m.configPath)
 	}
-	logFile, err := os.OpenFile(m.logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	logFile, err := os.OpenFile(m.logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}
@@ -219,6 +221,9 @@ func (m *Manager) Logs(limit int64) (string, error) {
 	if limit <= 0 {
 		limit = 8192
 	}
+	if limit > 1<<20 {
+		limit = 1 << 20
+	}
 	b, err := os.ReadFile(m.logPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -230,4 +235,33 @@ func (m *Manager) Logs(limit int64) (string, error) {
 		b = b[int64(len(b))-limit:]
 	}
 	return string(bytes.TrimLeft(b, "\x00")), nil
+}
+
+func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, ".frp-write-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(perm); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }

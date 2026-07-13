@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"frp-platform/client/frp-client/internal/clientcore"
 )
@@ -26,5 +27,14 @@ func main() {
 	server := clientcore.NewLocalServer(manager, *webDir)
 	log.Printf("frp client local webui listening on http://%s", *addr)
 	log.Printf("runtime config: %s", manager.Status().ConfigPath)
-	log.Fatal(http.ListenAndServe(*addr, server.Handler()))
+	httpServer := &http.Server{
+		Addr:              *addr,
+		Handler:           server.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    32 << 10,
+	}
+	log.Fatal(httpServer.ListenAndServe())
 }

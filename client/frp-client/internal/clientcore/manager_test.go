@@ -66,6 +66,22 @@ func TestLocalServerRequiresTokenForMutations(t *testing.T) {
 	}
 }
 
+func TestLocalServerProtectsStatusAndLogs(t *testing.T) {
+	m, err := NewManager(t.TempDir(), "frpc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := NewLocalServer(m, t.TempDir()).Handler()
+	for _, path := range []string{"/api/status", "/api/logs"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		if rr.Code != http.StatusUnauthorized {
+			t.Fatalf("%s expected 401, got %d", path, rr.Code)
+		}
+	}
+}
+
 func TestLocalBenchmarkProbesReturnSpeedMetrics(t *testing.T) {
 	for _, typ := range []string{"http", "tcp", "udp"} {
 		t.Run(typ, func(t *testing.T) {

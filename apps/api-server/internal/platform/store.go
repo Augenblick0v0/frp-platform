@@ -815,6 +815,13 @@ func (s *Store) BindNode(req NodeBindRequest) (Node, error) {
 		return Node{}, ErrUnauthorized
 	}
 	n := s.nodes[id]
+	delete(s.nodesByBind, n.BindToken)
+	newBindToken, err := randomToken("node-bind")
+	if err != nil {
+		return Node{}, err
+	}
+	n.BindToken = newBindToken
+	s.nodesByBind[newBindToken] = id
 	now := time.Now()
 	if strings.TrimSpace(req.Name) != "" {
 		n.Name = strings.TrimSpace(req.Name)

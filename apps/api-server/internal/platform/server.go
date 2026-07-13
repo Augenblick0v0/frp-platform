@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -197,6 +200,10 @@ func (s *Server) adminMe(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) sendCode(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	var in struct {
 		Email   string `json:"email"`
 		Purpose string `json:"purpose"`
@@ -215,6 +222,10 @@ func (s *Server) sendCode(w http.ResponseWriter, r *http.Request) {
 	ok(w, map[string]any{"expires_in": 600})
 }
 func (s *Server) register(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	var in struct{ Email, Code, Password string }
 	if !decode(w, r, &in) {
 		return
@@ -227,6 +238,10 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 	ok(w, u)
 }
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	var in struct{ Email, Password string }
 	if !decode(w, r, &in) {
 		return
@@ -495,10 +510,18 @@ func (s *Server) clientTraffic(w http.ResponseWriter, r *http.Request, u User) {
 		w.WriteHeader(405)
 		return
 	}
+	if !InsecureDefaultsAllowed() && os.Getenv("ALLOW_CLIENT_TRAFFIC_REPORTS") != "true" {
+		fail(w, http.StatusForbidden, "CLIENT_TRAFFIC_REPORT_DISABLED", "client traffic reports are diagnostic-only until node telemetry is configured")
+		return
+	}
 	var in struct {
 		Reports []TrafficReport `json:"reports"`
 	}
 	if !decode(w, r, &in) {
+		return
+	}
+	if len(in.Reports) > 100 {
+		fail(w, http.StatusRequestEntityTooLarge, "TOO_MANY_REPORTS", "at most 100 traffic reports are accepted per request")
 		return
 	}
 	summary, err := s.store.ReportTraffic(u.ID, in.Reports)
@@ -589,8 +612,10 @@ func (s *Server) finishSpeedTestTunnel(w http.ResponseWriter, r *http.Request, u
 
 func (s *Server) runSpeedTestProbe(w http.ResponseWriter, r *http.Request, u User, id int64) {
 	var in SpeedTestProbeRequest
-	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&in)
+	if r.Body != nil && r.ContentLength != 0 {
+		if !decode(w, r, &in) {
+			return
+		}
 	}
 	if in.DurationSeconds <= 0 {
 		in.DurationSeconds = 45
@@ -998,12 +1023,19 @@ func (s *Server) nodeBind(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
+	if in.AgentURL != "" {
+		u, err := url.Parse(strings.TrimSpace(in.AgentURL))
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
+			fail(w, http.StatusBadRequest, "INVALID_AGENT_URL", "agent_url must be an absolute http(s) URL without credentials")
+			return
+		}
+	}
 	node, err := s.store.BindNode(in)
 	if err != nil {
 		handleErr(w, err)
 		return
 	}
-	ok(w, map[string]any{"node": node, "agent_token": node.AgentToken})
+	ok(w, map[string]any{"node_id": node.ID, "status": node.Status, "agent_token": node.AgentToken})
 }
 
 func parseNodeAction(path string) (int64, string, bool) {
@@ -1103,7 +1135,9 @@ func (s *Server) adminRenewDueCertificates(w http.ResponseWriter, r *http.Reques
 	var in struct {
 		Force bool `json:"force"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&in)
+	if r.Body != nil && r.ContentLength != 0 && !decode(w, r, &in) {
+		return
+	}
 	renewer := NewCertificateRenewer(s.store, s.automation)
 	res, err := renewer.RenewDue(r.Context(), in.Force)
 	if err != nil {
@@ -1207,8 +1241,15 @@ func (s *Server) adminSettings(w http.ResponseWriter, r *http.Request) {
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 	if r.Method != http.MethodGet {
 		defer r.Body.Close()
-		if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		dec := json.NewDecoder(r.Body)
+		if err := dec.Decode(v); err != nil {
 			fail(w, 400, "BAD_REQUEST", fmt.Sprintf("请求体错误: %v", err))
+			return false
+		}
+		var extra any
+		if err := dec.Decode(&extra); err != io.EOF {
+			fail(w, 400, "BAD_REQUEST", "请求体包含多余内容")
 			return false
 		}
 	}

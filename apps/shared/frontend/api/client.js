@@ -27,19 +27,20 @@ export class ApiClient {
   }
 
   token() {
-    try { return localStorage.getItem(this.tokenKey) || ''; } catch { return ''; }
+    try { return sessionStorage.getItem(this.tokenKey) || ''; } catch { return ''; }
   }
 
   setToken(token) {
     try {
-      if (token) localStorage.setItem(this.tokenKey, token);
-      else localStorage.removeItem(this.tokenKey);
+      if (token) sessionStorage.setItem(this.tokenKey, token);
+      else sessionStorage.removeItem(this.tokenKey);
+      localStorage.removeItem(this.tokenKey);
     } catch {}
   }
 
   localToken() {
     if (!this.localTokenKey) return '';
-    try { return localStorage.getItem(this.localTokenKey) || ''; } catch { return ''; }
+    try { return sessionStorage.getItem(this.localTokenKey) || ''; } catch { return ''; }
   }
 
   async request(path, options = {}) {
@@ -53,13 +54,24 @@ export class ApiClient {
     const body = hasBody && typeof options.body !== 'string' && !(options.body instanceof FormData)
       ? JSON.stringify(options.body)
       : options.body;
-    const res = await fetch(`${this.baseURL}${path}`, { ...options, headers, body });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), options.timeoutMs || 30000);
+    let res;
+    try {
+      res = await fetch(`${this.baseURL}${path}`, { ...options, headers, body, signal: options.signal || controller.signal });
+    } catch (err) {
+      if (err?.name === 'AbortError') throw new ApiError('请求超时，请稍后重试', 408);
+      throw err;
+    } finally {
+      clearTimeout(timeout);
+    }
     const text = await res.text();
     let json = null;
     if (text) {
       try { json = JSON.parse(text); } catch { json = { success: res.ok, data: text, message: text }; }
     }
     if (!res.ok) {
+      if (res.status === 401) this.setToken('');
       throw new ApiError(json?.message || res.statusText, res.status, json);
     }
     return unwrapResponse(json ?? { success: true, data: null });

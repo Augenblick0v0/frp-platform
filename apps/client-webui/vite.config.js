@@ -15,5 +15,5 @@ export default defineConfig({
     dedupe: ['react', 'react-dom', 'antd', '@ant-design/icons'],
   },
   server: { port: 5175, proxy: { '/api': 'http://127.0.0.1:8080' } },
-  build: { outDir: 'dist', emptyOutDir: true }
+  build: { outDir: 'dist', emptyOutDir: true, rollupOptions: { output: { manualChunks: { vendor: ['react', 'react-dom', 'antd', '@ant-design/icons'] } } } }
 });

@@ -652,6 +652,10 @@ func TestAdminNodeCreateBindAndRemoteStatus(t *testing.T) {
 	if bound["agent_token"].(string) == "" {
 		t.Fatalf("expected agent token in bind response %#v", bound)
 	}
+	second := request(t, s, "POST", "/api/nodes/bind", map[string]any{"bind_token": bindToken, "agent_url": fakeAgent.URL}, "")
+	if second.Code != http.StatusUnauthorized {
+		t.Fatalf("expected one-time bind token, got %d body=%s", second.Code, second.Body.String())
+	}
 
 	nodeID := int64(created["id"].(float64))
 	rr := request(t, s, "GET", fmt.Sprintf("/api/admin/nodes/%d/status", nodeID), nil, token)
@@ -660,6 +664,17 @@ func TestAdminNodeCreateBindAndRemoteStatus(t *testing.T) {
 	}
 	if store.Nodes()[0].Status != "online" {
 		t.Fatalf("expected node online, got %#v", store.Nodes()[0])
+	}
+}
+
+func TestAPIRejectsOversizedJSONBody(t *testing.T) {
+	s := NewServer(NewStore())
+	body := bytes.Repeat([]byte("x"), 1<<20+1)
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(append([]byte(`{"email":"`), append(body, []byte(`"}`)...)...)))
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest && rr.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected oversized body rejection, got %d", rr.Code)
 	}
 }
 

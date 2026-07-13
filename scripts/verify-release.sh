@@ -8,3 +8,5 @@ if [[ ! -f "SHA256SUMS-${VERSION}.txt" ]]; then
   exit 1
 fi
 sha256sum -c "SHA256SUMS-${VERSION}.txt"
+cd "$ROOT"
+./scripts/check-no-secrets.sh

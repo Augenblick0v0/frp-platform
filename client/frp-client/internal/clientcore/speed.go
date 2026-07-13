@@ -224,6 +224,7 @@ func startHTTPBenchmarkService(typ string) (*benchmarkService, error) {
 		writePattern(w, n)
 	})
 	mux.HandleFunc("/__frp_speed/upload", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxProbeBytes)
 		n, _ := io.Copy(io.Discard, r.Body)
 		_ = r.Body.Close()
 		w.Header().Set("X-Frp-Speed-Bytes", strconv.FormatInt(n, 10))
@@ -233,7 +234,14 @@ func startHTTPBenchmarkService(typ string) (*benchmarkService, error) {
 	if err != nil {
 		return nil, err
 	}
-	srv := &http.Server{Handler: mux}
+	srv := &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       30 * time.Second,
+		MaxHeaderBytes:    16 << 10,
+	}
 	go func() { _ = srv.Serve(ln) }()
 	return &benchmarkService{typ: typ, host: "127.0.0.1", port: ln.Addr().(*net.TCPAddr).Port, close: srv.Close}, nil
 }
