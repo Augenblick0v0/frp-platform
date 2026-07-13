@@ -825,3 +825,28 @@ func TestNarwhalNATNodeCreatesPortForwardAndKeepsInternalRemotePort(t *testing.T
 		t.Fatalf("unexpected NAT calls: %#v", fake.calls)
 	}
 }
+
+func TestClientTunnelsUsesSelectedNodeServerAddress(t *testing.T) {
+	store := NewStore()
+	s := NewServer(store)
+	token := registerTestUser(t, s, store, "node-client@example.com", "pass")
+	post(t, s, "/api/user/redeem", map[string]any{"code": "DEMO-PLAN-2026"}, token)
+	node, err := store.CreateNode(Node{Name: "jp-node", ServerAddr: "jp.achkck.cc.cd", FRPServerPort: 7000, TCPPortStart: 22000, TCPPortEnd: 22000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	post(t, s, "/api/tunnels", map[string]any{"name": "tcp-node", "type": "tcp", "local_host": "127.0.0.1", "local_port": 5666, "node_id": node.ID}, token)
+	rr := request(t, s, http.MethodGet, "/api/client/tunnels", nil, token)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("client tunnels status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var out struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Data["server_addr"] != "jp.achkck.cc.cd" || int(out.Data["node_id"].(float64)) != int(node.ID) {
+		t.Fatalf("expected node server config, got %#v", out.Data)
+	}
+}

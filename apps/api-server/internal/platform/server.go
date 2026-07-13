@@ -540,6 +540,7 @@ func (s *Server) clientTunnels(w http.ResponseWriter, r *http.Request, u User) {
 		bandwidth = sub.BandwidthKbps
 	}
 	tunnels := s.store.Tunnels(u.ID)
+	selectedNodeID := int64(0)
 	if idText := strings.TrimSpace(r.URL.Query().Get("speed_test_id")); idText != "" {
 		id, _ := strconv.ParseInt(idText, 10, 64)
 		filtered := []Tunnel{}
@@ -549,11 +550,22 @@ func (s *Server) clientTunnels(w http.ResponseWriter, r *http.Request, u User) {
 				if t.NodeID > 0 {
 					if node, err := s.store.Node(t.NodeID); err == nil {
 						st = settingsFromNode(st, node)
+						selectedNodeID = t.NodeID
 					}
 				}
 			}
 		}
 		tunnels = filtered
+	} else {
+		for _, t := range tunnels {
+			if t.NodeID > 0 && t.Status != "deleted" {
+				if node, err := s.store.Node(t.NodeID); err == nil {
+					st = settingsFromNode(st, node)
+					selectedNodeID = t.NodeID
+				}
+				break
+			}
+		}
 	}
 	for i := range tunnels {
 		tunnels[i].EffectiveBandwidthKbps = effectiveBandwidth(bandwidth, tunnels[i].BandwidthKbps)
@@ -561,6 +573,7 @@ func (s *Server) clientTunnels(w http.ResponseWriter, r *http.Request, u User) {
 	ok(w, map[string]any{
 		"server_addr":              st.ServerAddr,
 		"server_port":              st.FRPServerPort,
+		"node_id":                  selectedNodeID,
 		"bandwidth_limit_kbps":     bandwidth,
 		"tunnels":                  tunnels,
 		"requires_local_frp_token": true,
