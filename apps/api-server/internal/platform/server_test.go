@@ -826,6 +826,34 @@ func TestNarwhalNATNodeCreatesPortForwardAndKeepsInternalRemotePort(t *testing.T
 	}
 }
 
+func TestNarwhalNATNodeHTTPUsesVHostPortForward(t *testing.T) {
+	fake := &fakeNATForwarder{}
+	restore := SetNATPortForwarderForTest(fake)
+	defer restore()
+	store := NewStore()
+	s := NewServer(store)
+	token := registerTestUser(t, s, store, "nat-http@example.com", "pass")
+	post(t, s, "/api/user/redeem", map[string]any{"code": "DEMO-PLAN-2026"}, token)
+	u, err := store.UserByToken(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node, err := store.CreateNode(Node{Name: "jp-nat", NodeKind: NodeKindNarwhalNAT, ServerAddr: "10.0.0.2", NATProvider: NATProviderNarwhal, NATInstanceID: "vm-jp", NATEntryHost: "jp.achkck.cc.cd"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tun, err := store.CreateTunnel(u.ID, Tunnel{Name: "fnos-http", NodeID: node.ID, Type: "http", LocalHost: "127.0.0.1", LocalPort: 5666, Domain: "fnos.crepuscularian.xyz"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tun.PublicURL != "http://fnos.crepuscularian.xyz:10080" {
+		t.Fatalf("public URL should use NAT HTTP vhost mapping, got %q", tun.PublicURL)
+	}
+	if len(fake.calls) != 1 || fake.calls[0].GuestPort != 80 || fake.calls[0].Protocol != "tcp" {
+		t.Fatalf("unexpected NAT calls: %#v", fake.calls)
+	}
+}
+
 func TestClientTunnelsUsesSelectedNodeServerAddress(t *testing.T) {
 	store := NewStore()
 	s := NewServer(store)

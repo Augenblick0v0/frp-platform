@@ -421,6 +421,13 @@ func (s *SQLStore) CreateTunnel(userID int64, req Tunnel) (Tunnel, error) {
 			t.Status = "pending_domain_check"
 			t.PublicURL = "http://" + domain
 		}
+		if req.NodeID > 0 && node.NodeKind == NodeKindNarwhalNAT {
+			publicURL, err := applyNATVHostForward(node, typ, domain)
+			if err != nil {
+				return Tunnel{}, err
+			}
+			t.PublicURL = publicURL
+		}
 	default:
 		return Tunnel{}, fmt.Errorf("unsupported tunnel type")
 	}
@@ -524,6 +531,13 @@ func (s *SQLStore) CreateSpeedTestTunnel(userID int64, req SpeedTestTunnelReques
 			t.PublicURL = "https://" + t.Domain
 		} else {
 			t.PublicURL = "http://" + t.Domain
+		}
+		if req.NodeID > 0 && node.NodeKind == NodeKindNarwhalNAT {
+			publicURL, err := applyNATVHostForward(node, typ, t.Domain)
+			if err != nil {
+				return SpeedTestTunnel{}, err
+			}
+			t.PublicURL = publicURL
 		}
 	default:
 		return SpeedTestTunnel{}, fmt.Errorf("unsupported tunnel type")

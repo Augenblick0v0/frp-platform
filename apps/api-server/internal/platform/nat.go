@@ -73,19 +73,12 @@ func normalizeNodeForSave(n Node) Node {
 }
 
 func applyNATForward(node Node, protocol string, guestPort int, tunnelName string) (string, error) {
-	node = normalizeNodeForSave(node)
-	if node.NodeKind != NodeKindNarwhalNAT {
-		return "", nil
-	}
-	if strings.ToLower(protocol) != "tcp" && strings.ToLower(protocol) != "udp" {
-		return "", fmt.Errorf("nat forwarding supports tcp/udp only")
-	}
-	if natPortForwarder == nil {
-		return "", fmt.Errorf("nat port forwarder is not configured")
-	}
-	res, err := natPortForwarder.ForwardPort(NATPortForwardRequest{Node: node, Protocol: strings.ToLower(protocol), GuestPort: guestPort, TunnelName: tunnelName})
+	res, err := forwardNATPort(node, protocol, guestPort, tunnelName)
 	if err != nil {
 		return "", err
+	}
+	if normalizeNodeForSave(node).NodeKind != NodeKindNarwhalNAT {
+		return "", nil
 	}
 	host := strings.TrimSpace(res.EntryHost)
 	if host == "" {
@@ -98,6 +91,39 @@ func applyNATForward(node Node, protocol string, guestPort int, tunnelName strin
 		return "", fmt.Errorf("nat host port missing")
 	}
 	return fmt.Sprintf("%s:%d", host, res.HostPort), nil
+}
+
+func applyNATVHostForward(node Node, scheme, domain string) (string, error) {
+	guestPort := 80
+	if scheme == "https" {
+		guestPort = 443
+	}
+	res, err := forwardNATPort(node, "tcp", guestPort, "frps-"+scheme+"-vhost")
+	if err != nil {
+		return "", err
+	}
+	if res.HostPort <= 0 {
+		return "", fmt.Errorf("nat host port missing")
+	}
+	return fmt.Sprintf("%s://%s:%d", scheme, domain, res.HostPort), nil
+}
+
+func forwardNATPort(node Node, protocol string, guestPort int, tunnelName string) (NATPortForwardResult, error) {
+	node = normalizeNodeForSave(node)
+	if node.NodeKind != NodeKindNarwhalNAT {
+		return NATPortForwardResult{}, nil
+	}
+	if strings.ToLower(protocol) != "tcp" && strings.ToLower(protocol) != "udp" {
+		return NATPortForwardResult{}, fmt.Errorf("nat forwarding supports tcp/udp only")
+	}
+	if natPortForwarder == nil {
+		return NATPortForwardResult{}, fmt.Errorf("nat port forwarder is not configured")
+	}
+	res, err := natPortForwarder.ForwardPort(NATPortForwardRequest{Node: node, Protocol: strings.ToLower(protocol), GuestPort: guestPort, TunnelName: tunnelName})
+	if err != nil {
+		return NATPortForwardResult{}, err
+	}
+	return res, nil
 }
 
 type NarwhalForwarder struct {
